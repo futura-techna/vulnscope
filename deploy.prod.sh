@@ -12,6 +12,9 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
+# Domain from nginx.conf
+DOMAIN="vulnscope.example.com"
+
 # Parse arguments
 FORCE_BUILD=false
 STOP_SERVICES=false
@@ -67,8 +70,8 @@ if [ ! -f ".env" ]; then
 fi
 
 # Check for SSL certificates
-if [ "$SKIP_SSL" = false ] && [ ! -d "ssl/live" ]; then
-    echo -e "${YELLOW}⚠️  SSL certificates not found.${NC}"
+if [ "$SKIP_SSL" = false ] && [ ! -d "ssl/live/$DOMAIN" ]; then
+    echo -e "${YELLOW}⚠️  SSL certificates not found for $DOMAIN.${NC}"
     read -p "Generate SSL certificates now? (y/n): " generate_ssl
     if [ "$generate_ssl" = "y" ]; then
         if [ -f "generate_ssl.sh" ]; then
@@ -106,8 +109,8 @@ docker compose -f docker-compose.prod.yml ps
 echo -e "${GREEN}=========================================="
 echo -e "  VulnScope is ready!"
 echo -e "=========================================="
-echo -e "Dashboard: ${YELLOW}http://localhost:8501${NC}"
-echo -e "API:       ${YELLOW}http://localhost:8000${NC}"
-echo -e "Adminer:   ${YELLOW}http://localhost:8080${NC}"
-echo -e "MinIO:     ${YELLOW}http://localhost:9001${NC}"
+echo -e "Dashboard: ${YELLOW}http://${DOMAIN}${NC}"
+echo -e "API:       ${YELLOW}http://${DOMAIN}/api${NC}"
+echo -e "Adminer:   ${YELLOW}http://${DOMAIN}:8080${NC}"
+echo -e "MinIO:     ${YELLOW}http://${DOMAIN}:9001${NC}"
 echo -e "=========================================="
