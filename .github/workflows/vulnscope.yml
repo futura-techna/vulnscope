@@ -1,0 +1,129 @@
+name: VulnScope Security Scan
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Run weekly scan on production
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Target URL to scan'
+        required: true
+        type: string
+
+env:
+  VULNSCOPE_API_URL: ${{ vars.VULNSCOPE_API_URL || 'http://localhost:8000' }}
+  VULNSCOPE_API_KEY: ${{ secrets.VULNSCOPE_API_KEY }}
+
+jobs:
+  # Run unit tests
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          
+      - name: Run tests
+        run: |
+          pytest --cov=src --cov-report=xml -v
+          
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+
+  # Run security scan
+  security-scan:
+    name: Security Scan
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run VulnScope Scan
+        run: |
+          # Build Docker image
+          docker build -t vulnscope:latest .
+          
+          # Start services
+          docker-compose up -d
+          
+          # Wait for API
+          sleep 10
+          
+          # Run scan
+          curl -X POST "${VULNSCOPE_API_URL}/api/v1/scan" \
+            -H "Content-Type: application/json" \
+            -H "X-API-Key: ${VULNSCOPE_API_KEY}" \
+            -d '{
+              "name": "GitHub Actions Scan",
+              "target_url": "${{ github.event.inputs.target_url || github.event.repository.html_url }}",
+              "scan_type": "full"
+            }'
+            
+      - name: Check Results
+        run: |
+          # Get scan results
+          SCAN_ID=$(curl -s "${VULNSCOPE_API_URL}/api/v1/scans" \
+            -H "X-API-Key: ${VULNSCOPE_API_KEY}" | \
+            jq -r '.[0].id')
+          
+          # Get findings
+          FINDINGS=$(curl -s "${VULNSCOPE_API_URL}/api/v1/scans/${SCAN_ID}/findings" \
+            -H "X-API-Key: ${VULNSCOPE_API_KEY}")
+          
+          # Check for critical vulnerabilities
+          CRITICAL=$(echo "$FINDINGS" | jq '[.[] | select(.severity == "CRITICAL")] | length')
+          HIGH=$(echo "$FINDINGS" | jq '[.[] | select(.severity == "HIGH")] | length')
+          
+          echo "Critical: $CRITICAL, High: $HIGH"
+          
+          if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
+            echo "::warning::Security vulnerabilities found!"
+            echo "$FINDINGS" | jq '.'
+            exit 1
+          fi
+
+  # Security Gate
+  security-gate:
+    name: Security Gate
+    needs: security-scan
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Check scan status
+        run: |
+          if [ "${{ needs.security-scan.result }}" == "failure" ]; then
+            echo "::error::Security gate failed - vulnerabilities detected"
+            exit 1
+          fi
+          echo "Security gate passed ✓"
+
+  # Upload SARIF to GitHub Advanced Security
+  upload-sarif:
+    name: Upload SARIF
+    needs: security-scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: vulnscope-results.sarif
+          category: vulnerscope-scan

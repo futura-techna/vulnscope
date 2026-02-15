@@ -1,0 +1,127 @@
+# VulnScope GitLab CI/CD Pipeline
+# Add this file to your .gitlab-ci.yml or use as a template
+
+variables:
+  VULNSCOPE_API_URL: "${VULNSCOPE_API_URL}"
+  VULNSCOPE_API_KEY: "${VULNSCOPE_API_KEY}"
+
+stages:
+  - test
+  - security
+  - deploy
+
+# Run tests
+test:
+  stage: test
+  image: python:3.12-slim
+  before_script:
+    - pip install -r requirements.txt
+  script:
+    - pytest --cov=src --cov-report=xml -v
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    expire_in: 1 week
+
+# Security scan job
+vulnscope-scan:
+  stage: security
+  image: docker:24-cli
+  services:
+    - docker:24-cli-dind
+  script:
+    - |
+      # Build VulnScope
+      docker build -t vulnscope:latest .
+      
+      # Start VulnScope services
+      docker-compose up -d api db redis
+      
+      # Wait for API
+      sleep 15
+      
+      # Run security scan
+      SCAN_RESPONSE=$(curl -s -X POST "${VULNSCOPE_API_URL}/api/v1/scan" \
+        -H "Content-Type: application/json" \
+        -H "X-API-Key: ${VULNSCOPE_API_KEY}" \
+        -d "{
+          \"name\": \"GitLab CI Scan - ${CI_PROJECT_NAME}\",
+          \"target_url\": \"${CI_PROJECT_URL}\",
+          \"scan_type\": \"full\"
+        }")
+      
+      SCAN_ID=$(echo "$SCAN_RESPONSE" | jq -r '.id // empty')
+      echo "Scan started with ID: $SCAN_ID"
+      
+      # Wait for scan to complete (poll every 30 seconds)
+      for i in {1..20}; do
+        STATUS=$(curl -s "${VULNSCOPE_API_URL}/api/v1/scans/${SCAN_ID}" \
+          -H "X-API-Key: ${VULNSCOPE_API_KEY}" | jq -r '.status')
+        echo "Scan status: $STATUS"
+        if [ "$STATUS" == "completed" ] || [ "$STATUS" == "failed" ]; then
+          break
+        fi
+        sleep 30
+      done
+      
+      # Get findings
+      FINDINGS=$(curl -s "${VULNSCOPE_API_URL}/api/v1/scans/${SCAN_ID}/findings" \
+        -H "X-API-Key: ${VULNSCOPE_API_KEY}")
+      
+      # Count by severity
+      CRITICAL=$(echo "$FINDINGS" | jq '[.[] | select(.severity == "CRITICAL")] | length')
+      HIGH=$(echo "$FINDINGS" | jq '[.[] | select(.severity == "HIGH")] | length')
+      MEDIUM=$(echo "$FINDINGS" | jq '[.[] | select(.severity == "MEDIUM")] | length')
+      
+      echo "Findings: Critical=$CRITICAL, High=$HIGH, Medium=$MEDIUM"
+      
+      # Output results as GitLab security report
+      echo "$FINDINGS" > vulnscope-report.json
+      
+      # Fail if critical or high vulnerabilities found
+      if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
+        echo "Security scan FAILED: Critical=$CRITICAL, High=$HIGH"
+        exit 1
+      fi
+  artifacts:
+    reports:
+      security: vulnscope-report.json
+    expire_in: 1 week
+  allow_failure: false
+  only:
+    - merge_requests
+    - main
+    - develop
+
+# Security gate
+security-gate:
+  stage: security
+  image: alpine:latest
+  script:
+    - |
+      echo "Security gate evaluation"
+      # This job depends on vulnscope-scan completing
+      # If we reached here, the scan passed
+      echo "✅ Security gate PASSED"
+  needs:
+    - vulnscope-scan
+  allow_failure: false
+  only:
+    - merge_requests
+    - main
+
+# Optional: Deploy if security passes
+deploy-production:
+  stage: deploy
+  script:
+    - echo "Deploying to production..."
+  environment:
+    name: production
+  needs:
+    - security-gate
+  only:
+    - main
+  when: manual

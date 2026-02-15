@@ -1,0 +1,7 @@
+Issue Type,Summary,Description,Epic Link,Priority,Acceptance Criteria
+Epic,Discovery & Inventory,"Crawler, import OpenAPI/GraphQL, auth flows",,High,Coverage endpoints >=80%
+Epic,DAST Engine,"Headless, payloads safe, SSRF/XSS/SQLi",,High,Faux positifs <=5% sur échantillon
+Epic,API Fuzzing,"Auth‑aware, schemas, rate‑limit, retries",,High,Compat OAuth/OIDC
+Epic,Evidence Vault & Policy‑as‑Code,"Logs immuables, ROE YAML, exports PCI/NIS2",,High,Chaîne d’audit complète
+Epic,Integrations CI/CD/ITSM/SIEM,"PR checks, gates, tickets auto, observabilité",,Medium,Tickets & gates en place
+Epic,Pentest assisté,"Validation humaine ciblée, retests, rapports",,Medium,2 campagnes validées
