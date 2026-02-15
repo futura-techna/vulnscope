@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 import logging
 
 from .routes import router
+from .auth_routes import router as auth_router
 from ..config.settings import get_settings
 
 
@@ -60,6 +61,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Include routers
 app.include_router(router, prefix="/api/v1", tags=["v1"])
+app.include_router(auth_router)
 
 
 # Health check endpoint
