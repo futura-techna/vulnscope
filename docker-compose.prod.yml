@@ -110,7 +110,7 @@ services:
       - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./ssl:/etc/nginx/ssl:ro
+      - /home/cisse/ssl:/etc/nginx/ssl:ro
     depends_on:
       - api
       - dashboard
