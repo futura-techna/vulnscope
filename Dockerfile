@@ -21,10 +21,9 @@ RUN uv pip install --system -r requirements.txt
 
 # Copy source code
 COPY src/ src/
-COPY dashboard/ dashboard/
 
-# Expose ports
-EXPOSE 8000 8501
+# Expose port
+EXPOSE 8000
 
 # Default command
 CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

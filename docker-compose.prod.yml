@@ -21,17 +21,17 @@ services:
     restart: unless-stopped
     command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --workers 4
 
-  # VulnScope Dashboard (Streamlit)
-  dashboard:
-    build: .
+  # VulnScope Frontend (Next.js)
+  frontend:
+    build: ./frontend
     ports:
-      - "8501:8501"
+      - "3000:3000"
     environment:
+      - NEXT_PUBLIC_API_URL=http://api:8000/api/v1
       - API_URL=http://api:8000
     depends_on:
       - api
     restart: unless-stopped
-    command: streamlit run dashboard/app.py --server.address=0.0.0.0 --server.enableCORS=false
 
   # PostgreSQL Database
   db:
@@ -110,10 +110,10 @@ services:
       - "443:443"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - /home/cisse/ssl:/etc/nginx/ssl:ro
+      - ./ssl:/etc/nginx/ssl:ro
     depends_on:
       - api
-      - dashboard
+      - frontend
     restart: unless-stopped
 
 volumes:

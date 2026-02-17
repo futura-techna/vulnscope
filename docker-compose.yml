@@ -14,16 +14,16 @@ services:
       - redis
     command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
 
-  # VulnScope Dashboard (Streamlit)
-  dashboard:
-    build: .
+  # VulnScope Frontend (Next.js)
+  frontend:
+    build: ./frontend
     ports:
-      - "8501:8501"
+      - "3000:3000"
     environment:
+      - NEXT_PUBLIC_API_URL=http://api:8000/api/v1
       - API_URL=http://api:8000
     depends_on:
       - api
-    command: streamlit run dashboard/app.py --server.address=0.0.0.0
 
   # PostgreSQL Database
   db:

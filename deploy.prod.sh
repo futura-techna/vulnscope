@@ -13,7 +13,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 # Domain from nginx.conf
-DOMAIN="vulnscope.example.com"
+DOMAIN="vulnscope.duckdns.org"
 
 # Parse arguments
 FORCE_BUILD=false
