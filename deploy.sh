@@ -13,7 +13,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 # Default services
-SERVICES="${@:-api dashboard db redis minio elasticsearch}"
+SERVICES="${@:-api frontend db redis minio elasticsearch}"
 
 # Parse arguments
 FORCE_BUILD=false
@@ -37,11 +37,11 @@ while [[ $# -gt 0 ]]; do
       echo "  --force, -f   Force rebuild (no cache)"
       echo "  --help, -h    Show this help"
       echo ""
-      echo "Services (default: all): api dashboard db redis minio elasticsearch"
+      echo "Services (default: all): api frontend db redis minio elasticsearch"
       echo ""
       echo "Examples:"
       echo "  $0                    # Build all services"
-      echo "  $0 api dashboard       # Build only api and dashboard"
+      echo "  $0 api frontend       # Build only api and frontend"
       echo "  $0 --stop             # Stop and rebuild all"
       echo "  $0 -s -f api          # Force rebuild api only"
       exit 0
@@ -89,7 +89,7 @@ docker compose ps
 echo -e "${GREEN}=========================================="
 echo -e "  VulnScope is ready!"
 echo -e "=========================================="
-echo -e "Dashboard: ${YELLOW}http://localhost:8501${NC}"
+echo -e "Frontend:  ${YELLOW}http://localhost:3000${NC}"
 echo -e "API:       ${YELLOW}http://localhost:8000${NC}"
 echo -e "MinIO:     ${YELLOW}http://localhost:9001${NC}"
 echo -e "=========================================="
