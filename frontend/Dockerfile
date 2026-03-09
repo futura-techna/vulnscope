@@ -19,9 +19,11 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Generate environment variables
-ENV NEXT_PUBLIC_API_URL=http://api:8000/api/v1
+# Generate environment variables (will be overridden at runtime)
+ENV NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 ENV NEXT_TELEMETRY_DISABLED=1
+# Render sets PORT environment variable
+ENV PORT=3000
 
 # Build the application (skip lint)
 RUN pnpm build --no-lint

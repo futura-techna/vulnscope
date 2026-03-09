@@ -1,0 +1,78 @@
+# Render Blueprint for VulnScope
+# https://render.com/docs/blueprint-spec
+
+services:
+  # ===================
+  # API Backend (FastAPI)
+  # ===================
+  - type: web
+    name: vulnscope-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free # Change to 'starter' or 'standard' for production
+    healthCheckPath: /health
+    envVars:
+      - key: VULNSCOPE_ENVIRONMENT
+        value: production
+      - key: VULNSCOPE_DEBUG
+        value: false
+      - key: VULNSCOPE_SECRET_KEY
+        generateValue: true
+      - key: VULNSCOPE_API_KEY
+        generateValue: true
+      - key: VULNSCOPE_DATABASE__URL
+        fromDatabase:
+          name: vulnscope-db
+          property: connectionString
+      - key: VULNSCOPE_REDIS__HOST
+        fromService:
+          name: vulnscope-redis
+          property: host
+      - key: VULNSCOPE_REDIS__PORT
+        value: 6379
+      - key: VULNSCOPE_REDIS__PASSWORD
+        fromService:
+          name: vulnscope-redis
+          property: password
+      - key: VULNSCOPE_LOG_LEVEL
+        value: INFO
+      - key: PORT
+        value: 8000
+
+  # ===================
+  # Frontend (Next.js)
+  # ===================
+  - type: web
+    name: vulnscope-frontend
+    runtime: docker
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    plan: free # Change to 'starter' or 'standard' for production
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        value: https://vulnscope-api.onrender.com/api/v1
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+
+  # ===================
+  # Redis Cache
+  # ===================
+  - type: redis
+    name: vulnscope-redis
+    plan: free # Free tier: 25MB, 30 connections
+    maxmemoryPolicy: allkeys-lru
+
+# ===================
+# PostgreSQL Database
+# ===================
+databases:
+  - name: vulnscope-db
+    databaseName: vulnscope
+    user: vulnscope
+    plan: free # Free tier: 90 days, then $7/month
+    postgresMajorVersion: 15
