@@ -5,6 +5,7 @@ Advanced web crawler for endpoint discovery
 
 import asyncio
 import re
+import logging
 from typing import List, Set, Optional, Dict, Any
 from urllib.parse import urljoin, urlparse, urlunparse
 from dataclasses import dataclass, field
@@ -12,7 +13,16 @@ from datetime import datetime
 
 import requests
 from bs4 import BeautifulSoup
-from playwright.async_api import async_playwright
+
+logger = logging.getLogger(__name__)
+
+# Optional playwright import for JavaScript rendering
+try:
+    from playwright.async_api import async_playwright
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    async_playwright = None
 
 from ..core.models import Endpoint, Target
 from ..core.exceptions import DiscoveryError
@@ -54,6 +64,7 @@ class Crawler:
         self.discovered_endpoints: List[Endpoint] = []
         self.pending_urls: List[str] = []
         self.target: Optional[Target] = None
+        self.errors: List[str] = []
     
     def _is_valid_url(self, url: str) -> bool:
         """Check if URL is valid and within scope"""
@@ -187,6 +198,10 @@ class Crawler:
     
     async def _fetch_with_playwright(self, url: str) -> Optional[str]:
         """Fetch URL using headless browser for JavaScript rendering"""
+        if not PLAYWRIGHT_AVAILABLE:
+            # Fallback to regular requests if playwright not available
+            return self._fetch_page(url)
+        
         try:
             async with async_playwright() as p:
                 browser = await p.chromium.launch(headless=True)
@@ -196,8 +211,8 @@ class Crawler:
                 await browser.close()
                 return content
         except Exception as e:
-            self.logger.warning(f"Playwright fetch failed for {url}: {e}")
-            return None
+            # Fallback to regular requests on playwright error
+            return self._fetch_page(url)
     
     def _fetch_page(self, url: str) -> Optional[str]:
         """Fetch a page using requests"""
