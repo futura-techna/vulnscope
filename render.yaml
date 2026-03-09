@@ -53,6 +53,12 @@ services:
         value: production
       - key: PORT
         value: 3000
+      - key: NEXTAUTH_URL
+        value: https://vulnscope-frontend.onrender.com
+      - key: NEXTAUTH_SECRET
+        generateValue: true
+      - key: API_URL
+        value: https://vulnscope-api.onrender.com
 
   # ===================
   # Redis Cache

@@ -44,12 +44,12 @@ export function LoginPage() {
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
       {/* Header Section */}
       <div className="text-center mb-8 max-w-lg">
-        <h1 className="text-3xl font-bold text-white mb-4">Econeria</h1>
-        <p className="text-lg text-blue-400 mb-2">Plateforme d'optimisation énergétique intelligente</p>
+        <h1 className="text-3xl font-bold text-white mb-4">VulnScope</h1>
+        <p className="text-lg text-blue-400 mb-2">Dynamic Application Security Testing Platform</p>
         <div className="space-y-1 text-sm text-gray-400 mt-4">
           <p>🔒 Sécurisé avec chiffrement de bout en bout</p>
           <p>🛡️ Authentification multi-facteurs</p>
-          <p>⚡ Économies d'énergie en temps réel</p>
+          <p>🔍 Détection automatique des vulnérabilités</p>
         </div>
       </div>
 
@@ -67,7 +67,7 @@ export function LoginPage() {
         <div className="mb-6 p-4 bg-muted rounded-lg">
           <p className="text-sm text-muted-foreground">
             <strong>Demo Credentials:</strong><br />
-            admin / admin123
+            demo / admin123
           </p>
         </div>
 
