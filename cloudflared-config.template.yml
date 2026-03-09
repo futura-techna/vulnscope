@@ -1,0 +1,103 @@
+# ==============================================================================
+# Configuration Cloudflare Tunnel pour VulnScope
+# ==============================================================================
+# Ce fichier est un template. Copiez-le et personnalisez-le :
+#   cp cloudflared-config.template.yml /etc/cloudflared/config.yml
+#
+# Ensuite, remplacez les placeholders :
+#   - <TUNNEL_ID> : ID du tunnel (obtenu avec 'cloudflared tunnel list')
+#   - <USER> : Votre nom d'utilisateur
+#   - <DOMAIN> : Votre domaine Cloudflare
+# ==============================================================================
+
+# ID du tunnel (obtenu après 'cloudflared tunnel create <nom>')
+tunnel: <TUNNEL_ID>
+
+# Chemin vers le fichier d'identification (généré automatiquement)
+credentials-file: /home/<USER>/.cloudflared/<TUNNEL_ID>.json
+
+# ==============================================================================
+# Règles de routage (ingress)
+# ==============================================================================
+# Les règles sont évaluées de haut en bas.
+# La première règle qui correspond est utilisée.
+# La dernière règle doit être un catch-all (obligatoire).
+
+ingress:
+  # ------------------------------------------------------------------------------
+  # Coolify Dashboard
+  # ------------------------------------------------------------------------------
+  - hostname: coolify.<DOMAIN>
+    service: http://localhost:8000
+    # Options optionnelles :
+    # originRequest:
+    #   noTLSVerify: true  # Désactiver la vérification TLS (si cert auto-signé)
+
+  # ------------------------------------------------------------------------------
+  # VulnScope Frontend (Next.js)
+  # ------------------------------------------------------------------------------
+  - hostname: vulnscope.<DOMAIN>
+    service: http://localhost:3000
+
+  # ------------------------------------------------------------------------------
+  # VulnScope API (FastAPI)
+  # ------------------------------------------------------------------------------
+  - hostname: api.<DOMAIN>
+    service: http://localhost:8001
+
+  # ------------------------------------------------------------------------------
+  # Services supplémentaires (décommentez et personnalisez)
+  # ------------------------------------------------------------------------------
+  # - hostname: grafana.<DOMAIN>
+  #   service: http://localhost:3001
+  #
+  # - hostname: prometheus.<DOMAIN>
+  #   service: http://localhost:9090
+  #
+  # - hostname: adminer.<DOMAIN>
+  #   service: http://localhost:8080
+
+  # ------------------------------------------------------------------------------
+  # Règle par défaut (OBLIGATOIRE)
+  # ------------------------------------------------------------------------------
+  # Retourne 404 pour toutes les requêtes ne correspondant à aucune règle
+  - service: http_status:404
+
+# ==============================================================================
+# Configuration avancée (optionnelle)
+# ==============================================================================
+
+# Logging
+# logfile: /var/log/cloudflared.log
+
+# Métriques (pour monitoring)
+# metrics:
+#   bind-address: 127.0.0.1:55555
+
+# Healthcheck (pour vérifier que le tunnel fonctionne)
+# healthcheck:
+#   bind-address: 127.0.0.1:55556
+
+# ==============================================================================
+# Commandes utiles
+# ==============================================================================
+# Démarrer le tunnel manuellement :
+#   cloudflared tunnel run <TUNNEL_NAME>
+#
+# Installer comme service système :
+#   sudo cloudflared service install
+#   sudo systemctl enable cloudflared
+#   sudo systemctl start cloudflared
+#
+# Vérifier le statut :
+#   sudo systemctl status cloudflared
+#
+# Voir les logs :
+#   sudo journalctl -u cloudflared -f
+#
+# Lister les tunnels :
+#   cloudflared tunnel list
+#
+# Créer un enregistrement DNS :
+#   cloudflared tunnel route dns <TUNNEL_NAME> <HOSTNAME>
+# ==============================================================================
