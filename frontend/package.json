@@ -2,15 +2,14 @@
   "name": "vulscope-frontend",
   "version": "1.0.0",
   "private": true,
-  "packageManager": "pnpm@8.15.0",
   "scripts": {
-    "dev": "pnpm dev",
-    "build": "pnpm build",
-    "start": "pnpm start",
-    "lint": "pnpm lint",
-    "test": "pnpm test",
-    "test:watch": "pnpm test --watch",
-    "test:coverage": "pnpm test --coverage"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "dependencies": {
     "next": "14.1.0",
