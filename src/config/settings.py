@@ -40,6 +40,7 @@ class DatabaseConfig(BaseModel):
 
 class RedisConfig(BaseModel):
     """Redis cache configuration"""
+    url: Optional[str] = Field(default=None)  # Full connection URL (Render provides this)
     host: str = Field(default="localhost")
     port: int = Field(default=6379)
     db: int = Field(default=0)
@@ -104,7 +105,7 @@ class Settings(BaseSettings):
     
     # Logging
     log_level: LogLevel = Field(default=LogLevel.INFO)
-    log_file: Optional[str] = Field(default="/var/log/vulnscope/app.log")
+    log_file: Optional[str] = Field(default=None)  # None = stdout only (container-friendly)
     
     # Security
     api_key: Optional[str] = Field(default=None)
