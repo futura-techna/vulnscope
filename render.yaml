@@ -25,16 +25,11 @@ services:
         fromDatabase:
           name: vulnscope-db
           property: connectionString
-      - key: VULNSCOPE_REDIS__HOST
+      - key: VULNSCOPE_REDIS__URL
         fromService:
+          type: redis
           name: vulnscope-redis
-          property: host
-      - key: VULNSCOPE_REDIS__PORT
-        value: 6379
-      - key: VULNSCOPE_REDIS__PASSWORD
-        fromService:
-          name: vulnscope-redis
-          property: password
+          property: connectionString
       - key: VULNSCOPE_LOG_LEVEL
         value: INFO
       - key: PORT
@@ -66,6 +61,9 @@ services:
     name: vulnscope-redis
     plan: free # Free tier: 25MB, 30 connections
     maxmemoryPolicy: allkeys-lru
+    ipAllowList: # Required field - allow all IPs
+      - source: 0.0.0.0/0
+        description: Allow all IPs
 
 # ===================
 # PostgreSQL Database
