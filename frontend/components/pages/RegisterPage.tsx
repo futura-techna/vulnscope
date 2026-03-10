@@ -83,8 +83,8 @@ export function RegisterPage({ onBackToLogin }: RegisterPageProps) {
         <h1 className="text-3xl font-bold text-white mb-4">VulnScope</h1>
         <p className="text-lg text-blue-400 mb-2">Create your account</p>
         <div className="space-y-1 text-sm text-gray-400 mt-4">
-          <p>🔒 Sécurisé avec chiffrement de bout en bout</p>
-          <p>🛡️ Protection des données garantie</p>
+          <p>🔒 Secured with end-to-end encryption</p>
+          <p>🛡️ Data protection guaranteed</p>
         </div>
       </div>
 

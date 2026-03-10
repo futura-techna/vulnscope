@@ -117,8 +117,8 @@ export function PasswordResetPage({ onBackToLogin }: PasswordResetPageProps) {
         <h1 className="text-3xl font-bold text-white mb-4">VulnScope</h1>
         <p className="text-lg text-blue-400 mb-2">Reset your password</p>
         <div className="space-y-1 text-sm text-gray-400 mt-4">
-          <p>🔒 Réinitialisation sécurisée du mot de passe</p>
-          <p>🛡️ Protection de votre compte garantie</p>
+          <p>🔒 Secure password reset</p>
+          <p>🛡️ Your account protection guaranteed</p>
         </div>
       </div>
 

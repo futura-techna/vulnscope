@@ -201,7 +201,7 @@ def create_user(username: str, email: str, password: str, full_name: Optional[st
         "hashed_password": pwd_context.hash(password),
         "roles": ["user"],  # Default role
         "is_active": True,
-        "is_verified": False,  # Require email verification
+        "is_verified": True,  # Auto-verify for demo (set to False in production with email)
     }
     
     MOCK_USERS[username.lower()] = user
