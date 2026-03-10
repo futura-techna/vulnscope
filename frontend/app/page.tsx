@@ -12,13 +12,17 @@ import { Compliance } from '@/components/pages/Compliance'
 import { Reports } from '@/components/pages/Reports'
 import { Settings } from '@/components/pages/Settings'
 import { LoginPage } from '@/components/pages/LoginPage'
+import { RegisterPage } from '@/components/pages/RegisterPage'
+import { PasswordResetPage } from '@/components/pages/PasswordResetPage'
 
 type Page = 'dashboard' | 'targets' | 'scans' | 'findings' | 'compliance' | 'reports' | 'settings'
+type AuthPage = 'login' | 'register' | 'reset-password'
 
 export default function Home() {
   const { data: session, status } = useSession()
   const [currentPage, setCurrentPage] = useState<Page>('dashboard')
   const [theme, setTheme] = useState<'light' | 'dark'>('dark')
+  const [authPage, setAuthPage] = useState<AuthPage>('login')
 
   // Show loading while checking auth
   if (status === 'loading') {
@@ -32,9 +36,21 @@ export default function Home() {
     )
   }
 
-  // Show login page if not authenticated
+  // Show auth pages if not authenticated
   if (!session) {
-    return <LoginPage />
+    switch (authPage) {
+      case 'register':
+        return <RegisterPage onBackToLogin={() => setAuthPage('login')} />
+      case 'reset-password':
+        return <PasswordResetPage onBackToLogin={() => setAuthPage('login')} />
+      default:
+        return (
+          <LoginPage 
+            onRegister={() => setAuthPage('register')}
+            onForgotPassword={() => setAuthPage('reset-password')}
+          />
+        )
+    }
   }
 
   const renderPage = () => {

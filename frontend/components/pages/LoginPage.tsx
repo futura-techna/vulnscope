@@ -4,7 +4,12 @@ import { useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { Shield, Lock, User } from 'lucide-react'
 
-export function LoginPage() {
+interface LoginPageProps {
+  onRegister: () => void
+  onForgotPassword: () => void
+}
+
+export function LoginPage({ onRegister, onForgotPassword }: LoginPageProps) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -107,6 +112,13 @@ export function LoginPage() {
                 required
               />
             </div>
+            <button
+              type="button"
+              onClick={onForgotPassword}
+              className="text-sm text-primary hover:underline mt-1"
+            >
+              Forgot password?
+            </button>
           </div>
 
           <button
@@ -159,8 +171,20 @@ export function LoginPage() {
           </button>
         </div>
 
+        {/* Register Link */}
+        <div className="mt-6 text-center text-sm text-muted-foreground">
+          Don't have an account?{' '}
+          <button
+            type="button"
+            onClick={onRegister}
+            className="text-primary hover:underline font-medium"
+          >
+            Create one
+          </button>
+        </div>
+
         {/* Footer */}
-        <p className="mt-6 text-center text-sm text-muted-foreground">
+        <p className="mt-4 text-center text-xs text-muted-foreground">
           Dynamic Application Security Testing Platform
         </p>
       </div>
