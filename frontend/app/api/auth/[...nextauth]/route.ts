@@ -22,7 +22,7 @@ const handler = NextAuth({
           const controller = new AbortController()
           const timeoutId = setTimeout(() => controller.abort(), 30000)
           
-          const res = await fetch(`${apiUrl}/api/auth/login`, {
+          const res = await fetch(`${apiUrl}/auth/login`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
