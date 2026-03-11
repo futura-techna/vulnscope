@@ -1,28 +1,73 @@
 'use client'
 
-import { useState } from 'react'
-import { Save, Settings as SettingsIcon, Bell, Key, Palette, Scan } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Save, Settings as SettingsIcon, Bell, Key, Palette, Scan, Loader2, CheckCircle } from 'lucide-react'
+import { useSettings, useUpdateSettings } from '@/lib/hooks/useApi'
 
 export function Settings() {
   const [formData, setFormData] = useState({
-    apiUrl: 'http://localhost:8000/api/v1',
-    apiKey: '',
-    maxConcurrent: 10,
+    api_url: '',
+    api_key: '',
+    max_concurrent: 10,
     timeout: 30,
-    rateLimit: 100,
-    emailNotifications: true,
-    slackIntegration: false,
-    defaultTheme: 'dark',
-    autoRefresh: false,
+    rate_limit: 100,
+    email_notifications: true,
+    slack_integration: false,
+    default_theme: 'dark' as 'light' | 'dark',
+    auto_refresh: false,
   })
   const [saved, setSaved] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Fetch settings using React Query
+  const { data: settings, isLoading } = useSettings()
+  const updateSettings = useUpdateSettings()
+
+  // Update form when settings load
+  useEffect(() => {
+    if (settings) {
+      setFormData({
+        api_url: settings.api_url || '',
+        api_key: '', // Don't show existing API key
+        max_concurrent: settings.max_concurrent || 10,
+        timeout: settings.timeout || 30,
+        rate_limit: settings.rate_limit || 100,
+        email_notifications: settings.email_notifications ?? true,
+        slack_integration: settings.slack_integration ?? false,
+        default_theme: settings.default_theme || 'dark',
+        auto_refresh: settings.auto_refresh ?? false,
+      })
+    }
+  }, [settings])
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Save settings
-    console.log('Saving settings:', formData)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 3000)
+    
+    try {
+      await updateSettings.mutateAsync({
+        api_url: formData.api_url,
+        max_concurrent: formData.max_concurrent,
+        timeout: formData.timeout,
+        rate_limit: formData.rate_limit,
+        email_notifications: formData.email_notifications,
+        slack_integration: formData.slack_integration,
+        default_theme: formData.default_theme,
+        auto_refresh: formData.auto_refresh,
+      })
+      
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (error) {
+      console.error('Failed to save settings:', error)
+      alert('Failed to save settings. Please try again.')
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
   }
 
   return (
@@ -35,7 +80,8 @@ export function Settings() {
 
       {/* Success Message */}
       {saved && (
-        <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-xl">
+        <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-xl flex items-center gap-3">
+          <CheckCircle className="h-5 w-5 text-green-500" />
           <p className="text-green-500">Settings saved successfully!</p>
         </div>
       )}
@@ -53,8 +99,8 @@ export function Settings() {
               <label className="block text-sm font-medium mb-2">API URL</label>
               <input
                 type="url"
-                value={formData.apiUrl}
-                onChange={(e) => setFormData({ ...formData, apiUrl: e.target.value })}
+                value={formData.api_url}
+                onChange={(e) => setFormData({ ...formData, api_url: e.target.value })}
                 className="w-full px-4 py-2 rounded-lg border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                 placeholder="http://localhost:8000/api/v1"
               />
@@ -63,11 +109,12 @@ export function Settings() {
               <label className="block text-sm font-medium mb-2">API Key</label>
               <input
                 type="password"
-                value={formData.apiKey}
-                onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
+                value={formData.api_key}
+                onChange={(e) => setFormData({ ...formData, api_key: e.target.value })}
                 className="w-full px-4 py-2 rounded-lg border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                 placeholder="Enter your API key"
               />
+              <p className="text-xs text-muted-foreground mt-1">Leave empty to keep existing key</p>
             </div>
           </div>
         </div>
@@ -84,8 +131,8 @@ export function Settings() {
               <label className="block text-sm font-medium mb-2">Max Concurrent Requests</label>
               <input
                 type="number"
-                value={formData.maxConcurrent}
-                onChange={(e) => setFormData({ ...formData, maxConcurrent: parseInt(e.target.value) })}
+                value={formData.max_concurrent}
+                onChange={(e) => setFormData({ ...formData, max_concurrent: parseInt(e.target.value) || 10 })}
                 className="w-full px-4 py-2 rounded-lg border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                 min={1}
                 max={100}
@@ -96,7 +143,7 @@ export function Settings() {
               <input
                 type="number"
                 value={formData.timeout}
-                onChange={(e) => setFormData({ ...formData, timeout: parseInt(e.target.value) })}
+                onChange={(e) => setFormData({ ...formData, timeout: parseInt(e.target.value) || 30 })}
                 className="w-full px-4 py-2 rounded-lg border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                 min={5}
                 max={120}
@@ -106,8 +153,8 @@ export function Settings() {
               <label className="block text-sm font-medium mb-2">Rate Limit (req/sec)</label>
               <input
                 type="number"
-                value={formData.rateLimit}
-                onChange={(e) => setFormData({ ...formData, rateLimit: parseInt(e.target.value) })}
+                value={formData.rate_limit}
+                onChange={(e) => setFormData({ ...formData, rate_limit: parseInt(e.target.value) || 100 })}
                 className="w-full px-4 py-2 rounded-lg border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                 min={1}
                 max={1000}
@@ -131,8 +178,8 @@ export function Settings() {
               </div>
               <input
                 type="checkbox"
-                checked={formData.emailNotifications}
-                onChange={(e) => setFormData({ ...formData, emailNotifications: e.target.checked })}
+                checked={formData.email_notifications}
+                onChange={(e) => setFormData({ ...formData, email_notifications: e.target.checked })}
                 className="rounded border-gray-300 h-5 w-5"
               />
             </label>
@@ -144,8 +191,8 @@ export function Settings() {
               </div>
               <input
                 type="checkbox"
-                checked={formData.slackIntegration}
-                onChange={(e) => setFormData({ ...formData, slackIntegration: e.target.checked })}
+                checked={formData.slack_integration}
+                onChange={(e) => setFormData({ ...formData, slack_integration: e.target.checked })}
                 className="rounded border-gray-300 h-5 w-5"
               />
             </label>
@@ -163,8 +210,8 @@ export function Settings() {
             <div>
               <label className="block text-sm font-medium mb-2">Default Theme</label>
               <select
-                value={formData.defaultTheme}
-                onChange={(e) => setFormData({ ...formData, defaultTheme: e.target.value })}
+                value={formData.default_theme}
+                onChange={(e) => setFormData({ ...formData, default_theme: e.target.value as 'light' | 'dark' })}
                 className="w-full px-4 py-2 rounded-lg border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 <option value="light">Light</option>
@@ -176,8 +223,8 @@ export function Settings() {
               <label className="flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-muted/50 h-[46px]">
                 <input
                   type="checkbox"
-                  checked={formData.autoRefresh}
-                  onChange={(e) => setFormData({ ...formData, autoRefresh: e.target.checked })}
+                  checked={formData.auto_refresh}
+                  onChange={(e) => setFormData({ ...formData, auto_refresh: e.target.checked })}
                   className="rounded border-gray-300 h-5 w-5"
                 />
                 <span className="font-medium">Auto-refresh dashboard</span>
@@ -190,10 +237,20 @@ export function Settings() {
         <div className="flex justify-end">
           <button
             type="submit"
-            className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
+            disabled={updateSettings.isPending}
+            className="flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
           >
-            <Save className="h-4 w-4" />
-            Save Settings
+            {updateSettings.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <Save className="h-4 w-4" />
+                Save Settings
+              </>
+            )}
           </button>
         </div>
       </form>

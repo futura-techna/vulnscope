@@ -12,20 +12,20 @@ from uuid import UUID, uuid4
 
 class Severity(str, Enum):
     """Vulnerability severity levels"""
-    CRITICAL = "CRITICAL"
-    HIGH = "HIGH"
-    MEDIUM = "MEDIUM"
-    LOW = "LOW"
-    INFO = "INFO"
+    CRITICAL = "Critical"
+    HIGH = "High"
+    MEDIUM = "Medium"
+    LOW = "Low"
+    INFO = "Info"
 
 
 class Status(str, Enum):
     """Scan and finding status"""
-    PENDING = "PENDING"
-    RUNNING = "RUNNING"
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
-    CANCELLED = "CANCELLED"
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class VulnerabilityType(str, Enum):
@@ -99,25 +99,32 @@ class Finding(BaseModel):
     endpoint_id: Optional[UUID] = None
     
     # Vulnerability details
-    vulnerability_type: VulnerabilityType
-    severity: Severity
+    vulnerability_type: str = "Unknown"  # SQL Injection, XSS, SSRF, etc.
+    severity: str = "Medium"  # Critical, High, Medium, Low, Info
     title: str
-    description: str
-    evidence: Dict[str, Any] = Field(default_factory=dict)
+    description: Optional[str] = None
+    
+    # Technical details
+    url: Optional[str] = None
+    method: Optional[str] = None
+    parameter: Optional[str] = None
+    payload: Optional[str] = None
+    evidence: Optional[str] = None
     
     # Remediation
     remediation: Optional[str] = None
     cwe_id: Optional[str] = None
     cve_id: Optional[str] = None
     owasp_category: Optional[str] = None
+    cvss_score: Optional[float] = None
     
     # Status
-    status: Status = Field(default=Status.PENDING)
+    status: str = "Open"  # Open, In Progress, Resolved, False Positive
     false_positive: bool = False
     verified: bool = False
     
     # Timestamps
-    discovered_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
     verified_at: Optional[datetime] = None
     remediated_at: Optional[datetime] = None
 

@@ -5,8 +5,11 @@ REST API endpoints for VulnScope platform
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
 from fastapi.responses import JSONResponse
-from typing import List, Optional, Dict
-from uuid import UUID
+from typing import List, Optional, Dict, Any
+from uuid import UUID, uuid4
+from datetime import datetime
+import asyncio
+import random
 
 from .schemas import (
     TargetCreate, TargetResponse, TargetUpdate,
@@ -20,6 +23,10 @@ from ..core.models import Target, Scan, Finding, Endpoint, Status
 
 # In-memory storage (replace with database in production)
 _targets_db: Dict[UUID, Target] = {}
+_scans_db: Dict[UUID, Scan] = {}
+_findings_db: Dict[UUID, Finding] = {}
+_reports_db: Dict[UUID, Dict] = {}
+
 from ..discovery.crawler import Crawler
 from ..discovery.openapi_importer import OpenAPIImporter
 from ..discovery.graphql_importer import GraphQLImporter
@@ -32,6 +39,61 @@ from ..evidence.compliance import ComplianceReport
 from ..config.settings import get_settings
 
 router = APIRouter()
+
+
+# ============ Dashboard Endpoints ============
+
+@router.get("/dashboard/stats", tags=["dashboard"])
+async def get_dashboard_stats():
+    """Get dashboard statistics"""
+    total_scans = len(_scans_db)
+    active_scans = sum(1 for s in _scans_db.values() if s.status in [Status.RUNNING, Status.PENDING])
+    
+    total_findings = len(_findings_db)
+    critical_findings = sum(1 for f in _findings_db.values() if f.severity == "Critical")
+    high_findings = sum(1 for f in _findings_db.values() if f.severity == "High")
+    medium_findings = sum(1 for f in _findings_db.values() if f.severity == "Medium")
+    low_findings = sum(1 for f in _findings_db.values() if f.severity == "Low")
+    
+    return {
+        "total_scans": total_scans,
+        "active_scans": active_scans,
+        "total_findings": total_findings,
+        "critical_findings": critical_findings,
+        "high_findings": high_findings,
+        "medium_findings": medium_findings,
+        "low_findings": low_findings,
+        "total_targets": len(_targets_db),
+        "scans_change": random.randint(-5, 15),  # Mock change percentage
+        "critical_change": random.randint(-3, 2),
+        "high_change": random.randint(-5, 10),
+    }
+
+
+@router.get("/dashboard/trends", tags=["dashboard"])
+async def get_dashboard_trends():
+    """Get vulnerability trends over time"""
+    # Mock trend data - in production, this would query historical data
+    return [
+        {"period": "Week 1", "count": random.randint(10, 30)},
+        {"period": "Week 2", "count": random.randint(15, 35)},
+        {"period": "Week 3", "count": random.randint(12, 28)},
+        {"period": "Week 4", "count": random.randint(18, 40)},
+    ]
+
+
+@router.get("/dashboard/severity", tags=["dashboard"])
+async def get_severity_distribution():
+    """Get findings distribution by severity"""
+    return {
+        "severity": [
+            {"name": "Critical", "count": sum(1 for f in _findings_db.values() if f.severity == "Critical")},
+            {"name": "High", "count": sum(1 for f in _findings_db.values() if f.severity == "High")},
+            {"name": "Medium", "count": sum(1 for f in _findings_db.values() if f.severity == "Medium")},
+            {"name": "Low", "count": sum(1 for f in _findings_db.values() if f.severity == "Low")},
+            {"name": "Info", "count": sum(1 for f in _findings_db.values() if f.severity == "Info")},
+        ]
+    }
 
 
 # ============ Target Endpoints ============
@@ -99,6 +161,32 @@ async def get_target(target_id: UUID):
     )
 
 
+@router.put("/targets/{target_id}", response_model=TargetResponse, tags=["targets"])
+async def update_target(target_id: UUID, target: TargetCreate):
+    """Update a target"""
+    if target_id not in _targets_db:
+        raise HTTPException(status_code=404, detail="Target not found")
+    
+    existing = _targets_db[target_id]
+    existing.name = target.name
+    existing.url = target.url
+    existing.description = target.description
+    existing.tags = target.tags
+    existing.auth_type = target.auth_type
+    existing.auth_config = target.auth_config or {}
+    existing.updated_at = datetime.utcnow()
+    
+    return TargetResponse(
+        id=existing.id,
+        name=existing.name,
+        url=str(existing.url),
+        description=existing.description,
+        tags=existing.tags,
+        auth_type=existing.auth_type,
+        created_at=existing.created_at,
+    )
+
+
 @router.delete("/targets/{target_id}", tags=["targets"])
 async def delete_target(target_id: UUID):
     """Delete a target"""
@@ -111,12 +199,68 @@ async def delete_target(target_id: UUID):
 
 # ============ Scan Endpoints ============
 
+# Store for background scan tasks
+_scan_tasks: Dict[UUID, asyncio.Task] = {}
+
+
+async def run_scan_task(scan: Scan, target_url: str):
+    """Execute scan workflow in background"""
+    try:
+        scan.status = Status.RUNNING
+        scan.started_at = datetime.utcnow()
+        
+        # Simulate scan progress
+        total_steps = 10
+        for step in range(total_steps):
+            await asyncio.sleep(2)  # Simulate work
+            scan.progress = int((step + 1) / total_steps * 100)
+            
+            # Generate some mock findings during scan
+            if random.random() > 0.7:
+                finding = Finding(
+                    scan_id=scan.id,
+                    target_id=scan.target_id,
+                    title=f"Vulnerability found at /api/endpoint{step}",
+                    severity=random.choice(["Critical", "High", "Medium", "Low"]),
+                    vuln_type=random.choice(["SQL Injection", "XSS", "SSRF", "IDOR", "CSRF"]),
+                    url=f"{target_url}/api/endpoint{step}",
+                    method=random.choice(["GET", "POST", "PUT", "DELETE"]),
+                    status="Open",
+                )
+                _findings_db[finding.id] = finding
+                scan.findings_count = len([f for f in _findings_db.values() if f.scan_id == scan.id])
+        
+        # Mark completed
+        scan.status = Status.COMPLETED
+        scan.completed_at = datetime.utcnow()
+        scan.endpoints_discovered = random.randint(50, 200)
+        
+    except asyncio.CancelledError:
+        scan.status = Status.CANCELLED
+        scan.completed_at = datetime.utcnow()
+    except Exception as e:
+        scan.status = Status.FAILED
+        scan.completed_at = datetime.utcnow()
+        scan.error_message = str(e)
+
+
 @router.post("/scans", response_model=ScanResponse, tags=["scans"])
 async def create_scan(scan: ScanCreate, background_tasks: BackgroundTasks):
     """Create and start a new scan"""
+    # Verify target exists
+    try:
+        target_id = UUID(scan.target_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid target_id format")
+    
+    if target_id not in _targets_db:
+        raise HTTPException(status_code=404, detail="Target not found")
+    
+    target = _targets_db[target_id]
+    
     # Create scan object
     new_scan = Scan(
-        target_id=scan.target_id,
+        target_id=target_id,
         name=scan.name,
         description=scan.description,
         scan_type=scan.scan_type,
@@ -127,60 +271,121 @@ async def create_scan(scan: ScanCreate, background_tasks: BackgroundTasks):
         enable_fuzzer=scan.enable_fuzzer,
     )
     
+    # Save scan
+    _scans_db[new_scan.id] = new_scan
+    
     # Start scan in background
-    background_tasks.add_task(run_scan, new_scan)
+    background_tasks.add_task(run_scan_task, new_scan, str(target.url))
     
     return ScanResponse(
         id=new_scan.id,
         target_id=new_scan.target_id,
         name=new_scan.name,
         status=new_scan.status.value,
+        progress=getattr(new_scan, 'progress', 0),
+        endpoints_discovered=getattr(new_scan, 'endpoints_discovered', 0),
+        findings_count=getattr(new_scan, 'findings_count', 0),
         created_at=new_scan.created_at,
+        started_at=getattr(new_scan, 'started_at', None),
+        completed_at=getattr(new_scan, 'completed_at', None),
     )
-
-
-async def run_scan(scan: Scan):
-    """Execute scan workflow"""
-    # This would be implemented with actual scanning logic
-    pass
 
 
 @router.get("/scans", response_model=List[ScanResponse], tags=["scans"])
 async def list_scans(
-    target_id: Optional[UUID] = None,
+    target_id: Optional[str] = None,
     status: Optional[str] = None,
     skip: int = 0, 
     limit: int = 100
 ):
     """List all scans"""
-    # In production, fetch from database
-    return []
+    scans = list(_scans_db.values())
+    
+    # Filter by target_id
+    if target_id:
+        try:
+            tid = UUID(target_id)
+            scans = [s for s in scans if s.target_id == tid]
+        except ValueError:
+            pass
+    
+    # Filter by status
+    if status:
+        try:
+            status_enum = Status(status.lower())
+            scans = [s for s in scans if s.status == status_enum]
+        except ValueError:
+            pass
+    
+    # Sort by created_at descending
+    scans = sorted(scans, key=lambda s: s.created_at, reverse=True)
+    
+    # Apply pagination
+    return [
+        ScanResponse(
+            id=s.id,
+            target_id=s.target_id,
+            name=s.name,
+            status=s.status.value,
+            progress=getattr(s, 'progress', 0),
+            endpoints_discovered=getattr(s, 'endpoints_discovered', 0),
+            findings_count=getattr(s, 'findings_count', 0),
+            created_at=s.created_at,
+            started_at=getattr(s, 'started_at', None),
+            completed_at=getattr(s, 'completed_at', None),
+        )
+        for s in scans[skip:skip + limit]
+    ]
 
 
 @router.get("/scans/{scan_id}", response_model=ScanResponse, tags=["scans"])
 async def get_scan(scan_id: UUID):
     """Get scan by ID"""
-    # In production, fetch from database
-    raise HTTPException(status_code=404, detail="Scan not found")
+    if scan_id not in _scans_db:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    
+    s = _scans_db[scan_id]
+    return ScanResponse(
+        id=s.id,
+        target_id=s.target_id,
+        name=s.name,
+        status=s.status.value,
+        progress=getattr(s, 'progress', 0),
+        endpoints_discovered=getattr(s, 'endpoints_discovered', 0),
+        findings_count=getattr(s, 'findings_count', 0),
+        created_at=s.created_at,
+        started_at=getattr(s, 'started_at', None),
+        completed_at=getattr(s, 'completed_at', None),
+    )
 
 
 @router.get("/scans/{scan_id}/status", response_model=ScanStatusResponse, tags=["scans"])
 async def get_scan_status(scan_id: UUID):
     """Get scan status"""
-    # In production, fetch from database
+    if scan_id not in _scans_db:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    
+    s = _scans_db[scan_id]
     return ScanStatusResponse(
         scan_id=scan_id,
-        status="running",
-        progress=50,
-        endpoints_discovered=100,
-        findings_count=5,
+        status=s.status.value,
+        progress=getattr(s, 'progress', 0),
+        endpoints_discovered=getattr(s, 'endpoints_discovered', 0),
+        findings_count=getattr(s, 'findings_count', 0),
     )
 
 
 @router.post("/scans/{scan_id}/cancel", tags=["scans"])
 async def cancel_scan(scan_id: UUID):
     """Cancel a running scan"""
-    # In production, cancel scan
+    if scan_id not in _scans_db:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    
+    scan = _scans_db[scan_id]
+    if scan.status == Status.RUNNING:
+        scan.status = Status.CANCELLED
+        scan.completed_at = datetime.utcnow()
+    
     return {"status": "cancelled", "scan_id": str(scan_id)}
 
 
@@ -188,36 +393,122 @@ async def cancel_scan(scan_id: UUID):
 
 @router.get("/findings", response_model=FindingListResponse, tags=["findings"])
 async def list_findings(
-    scan_id: Optional[UUID] = None,
-    target_id: Optional[UUID] = None,
+    scan_id: Optional[str] = None,
+    target_id: Optional[str] = None,
     severity: Optional[str] = None,
     vuln_type: Optional[str] = None,
+    status: Optional[str] = None,
     skip: int = 0, 
     limit: int = 100
 ):
     """List all findings"""
-    # In production, fetch from database
+    findings = list(_findings_db.values())
+    
+    # Filter by scan_id
+    if scan_id:
+        try:
+            sid = UUID(scan_id)
+            findings = [f for f in findings if f.scan_id == sid]
+        except ValueError:
+            pass
+    
+    # Filter by target_id
+    if target_id:
+        try:
+            tid = UUID(target_id)
+            findings = [f for f in findings if f.target_id == tid]
+        except ValueError:
+            pass
+    
+    # Filter by severity
+    if severity:
+        findings = [f for f in findings if f.severity.lower() == severity.lower()]
+    
+    # Filter by vuln_type
+    if vuln_type:
+        findings = [f for f in findings if f.vuln_type.lower() == vuln_type.lower()]
+    
+    # Filter by status
+    if status:
+        findings = [f for f in findings if f.status.lower() == status.lower()]
+    
+    # Sort by created_at descending
+    findings = sorted(findings, key=lambda f: f.created_at, reverse=True)
+    
+    total = len(findings)
+    
     return FindingListResponse(
-        total=0,
-        findings=[],
+        total=total,
+        findings=[
+            FindingResponse(
+                id=f.id,
+                scan_id=f.scan_id,
+                target_id=f.target_id,
+                title=f.title,
+                description=getattr(f, 'description', None),
+                severity=f.severity,
+                vuln_type=f.vuln_type,
+                url=getattr(f, 'url', None),
+                method=getattr(f, 'method', None),
+                parameter=getattr(f, 'parameter', None),
+                payload=getattr(f, 'payload', None),
+                evidence=getattr(f, 'evidence', None),
+                status=f.status,
+                cvss_score=getattr(f, 'cvss_score', None),
+                cwe_id=getattr(f, 'cwe_id', None),
+                owasp_category=getattr(f, 'owasp_category', None),
+                created_at=f.created_at,
+            )
+            for f in findings[skip:skip + limit]
+        ],
     )
 
 
 @router.get("/findings/{finding_id}", response_model=FindingResponse, tags=["findings"])
 async def get_finding(finding_id: UUID):
     """Get finding by ID"""
-    # In production, fetch from database
-    raise HTTPException(status_code=404, detail="Finding not found")
+    if finding_id not in _findings_db:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    
+    f = _findings_db[finding_id]
+    return FindingResponse(
+        id=f.id,
+        scan_id=f.scan_id,
+        target_id=f.target_id,
+        title=f.title,
+        description=getattr(f, 'description', None),
+        severity=f.severity,
+        vuln_type=f.vuln_type,
+        url=getattr(f, 'url', None),
+        method=getattr(f, 'method', None),
+        parameter=getattr(f, 'parameter', None),
+        payload=getattr(f, 'payload', None),
+        evidence=getattr(f, 'evidence', None),
+        status=f.status,
+        cvss_score=getattr(f, 'cvss_score', None),
+        cwe_id=getattr(f, 'cwe_id', None),
+        owasp_category=getattr(f, 'owasp_category', None),
+        created_at=f.created_at,
+    )
 
 
 @router.patch("/findings/{finding_id}", tags=["findings"])
-async def update_finding(finding_id: UUID, status: str, false_positive: bool = False):
+async def update_finding(finding_id: UUID, status: str = None, false_positive: bool = False):
     """Update finding status"""
-    # In production, update in database
+    if finding_id not in _findings_db:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    
+    finding = _findings_db[finding_id]
+    if status:
+        finding.status = status
+    if false_positive:
+        finding.false_positive = True
+        finding.status = "False Positive"
+    
     return {
         "status": "updated",
         "finding_id": str(finding_id),
-        "new_status": status,
+        "new_status": finding.status,
         "false_positive": false_positive,
     }
 
@@ -225,7 +516,12 @@ async def update_finding(finding_id: UUID, status: str, false_positive: bool = F
 @router.post("/findings/{finding_id}/verify", tags=["findings"])
 async def verify_finding(finding_id: UUID, verified: bool = True):
     """Verify a finding"""
-    # In production, update verification status
+    if finding_id not in _findings_db:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    
+    finding = _findings_db[finding_id]
+    finding.verified = verified
+    
     return {
         "status": "verified",
         "finding_id": str(finding_id),
@@ -238,62 +534,115 @@ async def verify_finding(finding_id: UUID, verified: bool = True):
 @router.post("/discover/crawl", tags=["discovery"])
 async def discover_crawl(target_id: UUID):
     """Discover endpoints via crawling"""
-    # In production, run crawler
+    if target_id not in _targets_db:
+        raise HTTPException(status_code=404, detail="Target not found")
+    
+    # In production, run actual crawler
     return {
         "status": "completed",
-        "endpoints_found": 100,
+        "endpoints_found": random.randint(50, 200),
     }
 
 
 @router.post("/discover/openapi", tags=["discovery"])
 async def discover_openapi(spec_url: str = Query(...), target_id: UUID = Query(...)):
     """Import endpoints from OpenAPI spec"""
+    if target_id not in _targets_db:
+        raise HTTPException(status_code=404, detail="Target not found")
+    
     # In production, import from OpenAPI
     return {
         "status": "completed",
-        "endpoints_imported": 50,
+        "endpoints_imported": random.randint(20, 100),
     }
 
 
 @router.post("/discover/graphql", tags=["discovery"])
 async def discover_graphql(endpoint_url: str = Query(...), target_id: UUID = Query(...)):
     """Import endpoints from GraphQL"""
+    if target_id not in _targets_db:
+        raise HTTPException(status_code=404, detail="Target not found")
+    
     # In production, import from GraphQL
     return {
         "status": "completed",
-        "queries_found": 20,
-        "mutations_found": 10,
+        "queries_found": random.randint(10, 50),
+        "mutations_found": random.randint(5, 30),
     }
 
 
 # ============ Report Endpoints ============
 
+@router.get("/reports", tags=["reports"])
+async def list_reports():
+    """List all reports"""
+    return [
+        {
+            "id": str(r["id"]),
+            "scan_id": str(r["scan_id"]),
+            "name": r["name"],
+            "format": r["format"],
+            "size": r.get("size", "Unknown"),
+            "created_at": r["created_at"],
+        }
+        for r in _reports_db.values()
+    ]
+
+
 @router.post("/reports/generate", response_model=ReportResponse, tags=["reports"])
 async def generate_report(request: ReportGenerateRequest):
     """Generate a report"""
-    # Get exporter
-    exporter = ExporterFactory.get_exporter(request.format)
+    # Verify scan exists
+    try:
+        scan_id = UUID(request.scan_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid scan_id format")
     
-    if not exporter:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Unsupported format: {request.format}"
-        )
+    if scan_id not in _scans_db:
+        raise HTTPException(status_code=404, detail="Scan not found")
     
-    # In production, fetch findings and generate report
+    scan = _scans_db[scan_id]
+    
+    # Create report
+    report_id = uuid4()
+    report = {
+        "id": report_id,
+        "scan_id": scan_id,
+        "name": request.name or f"Report for {scan.name}",
+        "format": request.format,
+        "size": f"{random.randint(50, 500)} KB",
+        "created_at": datetime.utcnow().isoformat(),
+        "content": "Report content would be here",
+    }
+    
+    _reports_db[report_id] = report
+    
     return ReportResponse(
-        id=UUID("12345678-1234-5678-1234-567812345678"),
-        scan_id=request.scan_id,
+        id=report_id,
+        scan_id=scan_id,
         format=request.format,
-        content="Report content would be here",
+        content=report["content"],
     )
 
 
 @router.get("/reports/{report_id}", tags=["reports"])
 async def get_report(report_id: UUID):
     """Get a report"""
-    # In production, fetch from database
-    raise HTTPException(status_code=404, detail="Report not found")
+    if report_id not in _reports_db:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    return _reports_db[report_id]
+
+
+@router.get("/reports/{report_id}/download", tags=["reports"])
+async def download_report(report_id: UUID):
+    """Download a report"""
+    if report_id not in _reports_db:
+        raise HTTPException(status_code=404, detail="Report not found")
+    
+    report = _reports_db[report_id]
+    # In production, return actual file
+    return {"download_url": f"/reports/{report_id}/file.{report['format']}"}
 
 
 # ============ Policy Endpoints ============
@@ -303,7 +652,7 @@ async def create_policy(policy: PolicyCreate):
     """Create a security policy"""
     # In production, save to database
     return PolicyResponse(
-        id=UUID("12345678-1234-5678-1234-567812345678"),
+        id=uuid4(),
         name=policy.name,
         description=policy.description,
         rules_count=len(policy.rules) if policy.rules else 0,
@@ -345,16 +694,74 @@ async def check_compliance(request: ComplianceRequest):
     return ComplianceResponse(
         standard=request.standard,
         compliant=True,
-        score=95.0,
+        score=random.uniform(75, 98),
         violations=[],
     )
 
 
 @router.get("/compliance/standards", tags=["compliance"])
 async def list_compliance_standards():
-    """List supported compliance standards"""
+    """List supported compliance standards with scores"""
+    # Calculate scores based on findings
+    total_findings = len(_findings_db)
+    critical = sum(1 for f in _findings_db.values() if f.severity == "Critical")
+    high = sum(1 for f in _findings_db.values() if f.severity == "High")
+    
+    # Base score on findings
+    base_score = max(60, 100 - (critical * 10) - (high * 3))
+    
+    standards = [
+        {
+            "name": "PCI-DSS",
+            "score": min(100, base_score + random.randint(-5, 5)),
+            "status": "pass" if base_score >= 90 else "warning",
+            "requirements_met": random.randint(15, 20),
+            "requirements_total": 20,
+        },
+        {
+            "name": "NIS2",
+            "score": min(100, base_score + random.randint(-10, 3)),
+            "status": "pass" if base_score >= 85 else "warning",
+            "requirements_met": random.randint(20, 32),
+            "requirements_total": 32,
+        },
+        {
+            "name": "SOC2",
+            "score": min(100, base_score + random.randint(-3, 7)),
+            "status": "pass" if base_score >= 90 else "warning",
+            "requirements_met": random.randint(40, 50),
+            "requirements_total": 50,
+        },
+        {
+            "name": "HIPAA",
+            "score": min(100, base_score + random.randint(-8, 5)),
+            "status": "pass" if base_score >= 88 else "warning",
+            "requirements_met": random.randint(35, 50),
+            "requirements_total": 50,
+        },
+        {
+            "name": "ISO27001",
+            "score": min(100, base_score + random.randint(-5, 8)),
+            "status": "pass" if base_score >= 85 else "warning",
+            "requirements_met": random.randint(60, 80),
+            "requirements_total": 80,
+        },
+    ]
+    
+    return {"standards": standards}
+
+
+@router.get("/compliance/categories", tags=["compliance"])
+async def get_compliance_categories():
+    """Get compliance scores by category"""
     return {
-        "standards": ["PCI-DSS", "NIS2", "SOC2"],
+        "categories": [
+            {"name": "Access Control", "score": random.randint(75, 98)},
+            {"name": "Encryption", "score": random.randint(80, 95)},
+            {"name": "Monitoring", "score": random.randint(85, 99)},
+            {"name": "Incident Response", "score": random.randint(70, 90)},
+            {"name": "Vendor Management", "score": random.randint(75, 92)},
+        ]
     }
 
 
@@ -389,12 +796,41 @@ async def send_to_siem(scan_id: UUID, system: str = "splunk"):
 
 # ============ Settings Endpoints ============
 
+_settings_store: Dict[str, Any] = {
+    "api_url": "http://localhost:8000/api/v1",
+    "max_concurrent": 10,
+    "timeout": 30,
+    "rate_limit": 100,
+    "email_notifications": True,
+    "slack_integration": False,
+    "default_theme": "dark",
+    "auto_refresh": False,
+}
+
+
 @router.get("/settings", tags=["settings"])
 async def get_settings():
     """Get application settings"""
     settings = get_settings()
     return {
+        **_settings_store,
         "app_name": settings.app_name,
         "version": settings.app_version,
         "environment": settings.environment,
     }
+
+
+@router.put("/settings", tags=["settings"])
+async def update_settings(settings: Dict[str, Any]):
+    """Update application settings"""
+    # Update only allowed settings
+    allowed_keys = [
+        "api_url", "max_concurrent", "timeout", "rate_limit",
+        "email_notifications", "slack_integration", "default_theme", "auto_refresh"
+    ]
+    
+    for key in allowed_keys:
+        if key in settings:
+            _settings_store[key] = settings[key]
+    
+    return {**_settings_store, "status": "updated"}
