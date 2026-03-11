@@ -133,11 +133,20 @@ class EvidenceConfig(BaseModel):
 
 class EmailConfig(BaseModel):
     """Email configuration for notifications"""
+    # Provider: 'resend' (recommended for Render) or 'smtp' (blocked on Render free tier)
+    provider: str = Field(default="resend")
+    
+    # Resend API (works on Render - recommended)
+    resend_api_key: Optional[str] = Field(default=None)
+    
+    # SMTP (blocked on Render free tier)
     smtp_host: str = Field(default="smtp.gmail.com")
     smtp_port: int = Field(default=587)
     smtp_user: Optional[str] = Field(default=None)
     smtp_password: Optional[str] = Field(default=None)
     smtp_use_tls: bool = Field(default=True)
+    
+    # Common settings
     from_email: Optional[str] = Field(default=None)
     from_name: str = Field(default="VulnScope")
     frontend_url: str = Field(default="http://localhost:3000")

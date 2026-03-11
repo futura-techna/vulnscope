@@ -1,12 +1,10 @@
 """
 VulnScope - Email Service
 Handles sending emails for verification, password reset, and notifications
+Supports Resend API (recommended for Render) and SMTP (local development)
 """
 
-import smtplib
 import logging
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from typing import Optional
 from jinja2 import Template
 
@@ -17,21 +15,59 @@ logger = logging.getLogger(__name__)
 
 
 class EmailService:
-    """Service for sending emails via SMTP"""
+    """Service for sending emails via Resend API or SMTP"""
     
     def __init__(self):
         self.settings = get_settings()
         self.email_config = self.settings.email
     
-    def _create_connection(self) -> Optional[smtplib.SMTP]:
-        """Create SMTP connection"""
-        if not self.email_config.enabled:
-            logger.warning("Email service is disabled")
-            return None
+    def _send_email_resend(self, to_email: str, subject: str, html_body: str, text_body: str) -> bool:
+        """Send email using Resend API (works on Render)"""
+        import requests
+        
+        if not self.email_config.resend_api_key:
+            logger.error("Resend API key not configured")
+            return False
+        
+        try:
+            from_email = self.email_config.from_email or "onboarding@resend.dev"
+            
+            response = requests.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {self.email_config.resend_api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "from": f"{self.email_config.from_name} <{from_email}>",
+                    "to": [to_email],
+                    "subject": subject,
+                    "html": html_body,
+                    "text": text_body
+                },
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"Email sent successfully to {to_email} via Resend")
+                return True
+            else:
+                logger.error(f"Resend API error: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Failed to send email via Resend to {to_email}: {e}")
+            return False
+    
+    def _send_email_smtp(self, to_email: str, subject: str, html_body: str, text_body: str) -> bool:
+        """Send email using SMTP (may not work on Render free tier)"""
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
         
         if not self.email_config.smtp_user or not self.email_config.smtp_password:
             logger.error("SMTP credentials not configured")
-            return None
+            return False
         
         try:
             smtp = smtplib.SMTP(
@@ -48,22 +84,6 @@ class EmailService:
                 self.email_config.smtp_password
             )
             
-            return smtp
-        except Exception as e:
-            logger.error(f"Failed to create SMTP connection: {e}")
-            return None
-    
-    def _send_email(self, to_email: str, subject: str, html_body: str, text_body: str) -> bool:
-        """Send an email"""
-        if not self.email_config.enabled:
-            logger.info(f"Email disabled - would have sent to {to_email}: {subject}")
-            return False
-        
-        smtp = self._create_connection()
-        if not smtp:
-            return False
-        
-        try:
             msg = MIMEMultipart('alternative')
             msg['Subject'] = subject
             msg['From'] = f"{self.email_config.from_name} <{self.email_config.from_email or self.email_config.smtp_user}>"
@@ -78,16 +98,26 @@ class EmailService:
                 msg.as_string()
             )
             
-            logger.info(f"Email sent successfully to {to_email}")
+            smtp.quit()
+            logger.info(f"Email sent successfully to {to_email} via SMTP")
             return True
+            
         except Exception as e:
-            logger.error(f"Failed to send email to {to_email}: {e}")
+            logger.error(f"Failed to send email via SMTP to {to_email}: {e}")
             return False
-        finally:
-            try:
-                smtp.quit()
-            except:
-                pass
+    
+    def _send_email(self, to_email: str, subject: str, html_body: str, text_body: str) -> bool:
+        """Send an email using configured provider"""
+        if not self.email_config.enabled:
+            logger.info(f"Email disabled - would have sent to {to_email}: {subject}")
+            return False
+        
+        provider = self.email_config.provider.lower()
+        
+        if provider == 'resend':
+            return self._send_email_resend(to_email, subject, html_body, text_body)
+        else:
+            return self._send_email_smtp(to_email, subject, html_body, text_body)
     
     def send_verification_email(self, email: str, token: str, username: str) -> bool:
         """Send email verification link"""
