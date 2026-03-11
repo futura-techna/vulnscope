@@ -45,6 +45,43 @@ class RedisConfig(BaseModel):
     port: int = Field(default=6379)
     db: int = Field(default=0)
     password: Optional[str] = Field(default=None)
+    
+    def get_connection_params(self) -> dict:
+        """
+        Parse Redis URL and return connection parameters.
+        Handles Render's redis:// URL format.
+        """
+        if self.url:
+            # Parse URL like redis://user:password@host:port/db
+            # or redis://host:port/db
+            from urllib.parse import urlparse
+            parsed = urlparse(self.url)
+            
+            host = parsed.hostname or self.host
+            port = parsed.port or self.port
+            password = parsed.password or self.password
+            
+            # Extract DB number from path (e.g., /0 -> 0)
+            db = 0
+            if parsed.path and parsed.path != '/':
+                try:
+                    db = int(parsed.path.lstrip('/'))
+                except ValueError:
+                    pass
+            
+            return {
+                'host': host,
+                'port': port,
+                'db': db,
+                'password': password
+            }
+        
+        return {
+            'host': self.host,
+            'port': self.port,
+            'db': self.db,
+            'password': self.password
+        }
 
 
 class ScannerConfig(BaseModel):

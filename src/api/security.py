@@ -129,24 +129,40 @@ class RateLimiter:
     - Sliding window rate limiting
     - Per-user and per-IP limits
     - Configurable limits
+    - Graceful fallback when Redis is unavailable
     """
     
     def __init__(self, redis_client: redis.Redis = None):
         self.redis = redis_client
         self.default_limit = 100  # requests per window
         self.default_window = 60  # seconds
+        self._redis_available = True
     
     def _get_redis(self):
         """Get or create Redis connection"""
         if self.redis is None:
             settings = get_settings()
-            self.redis = redis.Redis(
-                host=settings.redis.host,
-                port=settings.redis.port,
-                db=settings.redis.db,
-                password=settings.redis.password,
-                decode_responses=True
-            )
+            try:
+                # Use the new get_connection_params method
+                params = settings.redis.get_connection_params()
+                self.redis = redis.Redis(
+                    host=params['host'],
+                    port=params['port'],
+                    db=params['db'],
+                    password=params['password'],
+                    decode_responses=True,
+                    socket_connect_timeout=5,  # 5 second timeout
+                    socket_timeout=5
+                )
+                # Test connection
+                self.redis.ping()
+            except Exception as e:
+                # Log warning but don't crash - rate limiting will be disabled
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Redis connection failed: {e}. Rate limiting will be bypassed.")
+                self._redis_available = False
+                return None
         return self.redis
     
     async def check_rate_limit(self, key: str, limit: int = None, 
@@ -165,8 +181,17 @@ class RateLimiter:
         limit = limit or self.default_limit
         window = window or self.default_window
         
+        # If Redis is not available, allow all requests (graceful degradation)
+        if not self._redis_available:
+            return True, limit
+        
         try:
             r = self._get_redis()
+            
+            # If Redis connection failed, allow request
+            if r is None:
+                return True, limit
+            
             current = r.get(f"ratelimit:{key}")
             
             current_count = int(current) if current else 0

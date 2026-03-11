@@ -28,8 +28,38 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager"""
     # Startup
     logger.info("Starting VulnScope API...")
-    settings = get_settings()
-    logger.info(f"Environment: {settings.environment}")
+    
+    try:
+        settings = get_settings()
+        logger.info(f"Environment: {settings.environment}")
+        logger.info(f"Debug mode: {settings.debug}")
+        logger.info(f"Database URL configured: {bool(settings.database.url)}")
+        logger.info(f"Redis URL configured: {bool(settings.redis.url)}")
+        logger.info(f"Secret key configured: {bool(settings.secret_key)}")
+        
+        # Test Redis connection if configured
+        if settings.redis.url:
+            try:
+                import redis
+                params = settings.redis.get_connection_params()
+                logger.info(f"Testing Redis connection to {params['host']}:{params['port']}...")
+                r = redis.Redis(
+                    host=params['host'],
+                    port=params['port'],
+                    db=params['db'],
+                    password=params['password'],
+                    socket_connect_timeout=5
+                )
+                r.ping()
+                logger.info("Redis connection successful")
+            except Exception as e:
+                logger.warning(f"Redis connection failed (rate limiting will be disabled): {e}")
+        else:
+            logger.info("Redis not configured - rate limiting will be disabled")
+            
+    except Exception as e:
+        logger.error(f"Error during startup: {e}")
+        # Don't raise - let the app start anyway
     
     yield
     
