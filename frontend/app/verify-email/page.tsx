@@ -3,10 +3,14 @@
 import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { Mail, RefreshCw } from 'lucide-react';
 
 function VerifyEmailContent() {
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState('');
+  const [resendEmail, setResendEmail] = useState('');
+  const [resendStatus, setResendStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [resendMessage, setResendMessage] = useState('');
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -15,14 +19,14 @@ function VerifyEmailContent() {
     
     if (!token) {
       setStatus('error');
-      setMessage('Token de vérification manquant.');
+      setMessage('Token de vérification manquant. Veuillez utiliser le lien reçu par email.');
       return;
     }
 
     const verifyEmail = async () => {
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://vulnscope-api.onrender.com';
-        const response = await fetch(`${apiUrl}/auth/verify-email`, {
+        // Use relative URL to go through Next.js API route
+        const response = await fetch('/api/auth/verify-email', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -44,6 +48,7 @@ function VerifyEmailContent() {
           setMessage(data.detail || 'Erreur lors de la vérification de l\'email.');
         }
       } catch (error) {
+        console.error('Verification error:', error);
         setStatus('error');
         setMessage('Erreur de connexion au serveur. Veuillez réessayer.');
       }
@@ -51,6 +56,31 @@ function VerifyEmailContent() {
 
     verifyEmail();
   }, [searchParams, router]);
+
+  const handleResendVerification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResendStatus('loading');
+    setResendMessage('');
+
+    try {
+      const response = await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: resendEmail }),
+      });
+
+      const data = await response.json();
+      
+      setResendStatus('success');
+      setResendMessage(data.message || 'Un nouvel email de vérification a été envoyé.');
+    } catch (error) {
+      console.error('Resend verification error:', error);
+      setResendStatus('error');
+      setResendMessage('Erreur lors de l\'envoi. Veuillez réessayer.');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
@@ -112,12 +142,57 @@ function VerifyEmailContent() {
                 <p className="text-gray-400 mb-6">
                   {message}
                 </p>
-                <Link
-                  href="/?auth=register"
-                  className="inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-lg text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 transition-all"
-                >
-                  Réessayer l'inscription
-                </Link>
+                
+                {/* Resend verification form */}
+                <div className="bg-gray-700/50 rounded-lg p-4 mb-4">
+                  <p className="text-sm text-gray-300 mb-3">
+                    <Mail className="inline h-4 w-4 mr-1" />
+                    Demander un nouvel email de vérification:
+                  </p>
+                  <form onSubmit={handleResendVerification} className="space-y-3">
+                    <input
+                      type="email"
+                      value={resendEmail}
+                      onChange={(e) => setResendEmail(e.target.value)}
+                      placeholder="Votre adresse email"
+                      className="w-full px-4 py-2 bg-gray-600 border border-gray-500 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      required
+                    />
+                    <button
+                      type="submit"
+                      disabled={resendStatus === 'loading'}
+                      className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {resendStatus === 'loading' ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                          Envoi en cours...
+                        </>
+                      ) : (
+                        <>
+                          <Mail className="h-4 w-4" />
+                          Renvoyer l'email
+                        </>
+                      )}
+                    </button>
+                  </form>
+                  
+                  {resendStatus === 'success' && (
+                    <p className="mt-3 text-sm text-green-400">{resendMessage}</p>
+                  )}
+                  {resendStatus === 'error' && (
+                    <p className="mt-3 text-sm text-red-400">{resendMessage}</p>
+                  )}
+                </div>
+                
+                <div className="mt-4">
+                  <Link
+                    href="/?auth=register"
+                    className="inline-flex items-center justify-center px-6 py-3 border border-gray-600 text-base font-medium rounded-lg text-gray-300 hover:bg-gray-700 transition-all"
+                  >
+                    Retour à l'inscription
+                  </Link>
+                </div>
               </>
             )}
           </div>

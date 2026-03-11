@@ -5,6 +5,7 @@ User registration, login, password reset endpoints
 
 import secrets
 import hashlib
+import logging
 from datetime import timedelta
 from typing import Optional
 
@@ -12,6 +13,8 @@ from fastapi import APIRouter, HTTPException, Depends, status, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr, Field, validator
 from jose import JWTError, jwt
+
+logger = logging.getLogger(__name__)
 
 from .security import (
     pwd_context, 
@@ -114,6 +117,11 @@ class PasswordChangeRequest(BaseModel):
 class EmailVerificationRequest(BaseModel):
     """Request model for email verification"""
     token: str = Field(..., min_length=1)
+
+
+class ResendVerificationRequest(BaseModel):
+    """Request model for resending verification email"""
+    email: EmailStr
 
 
 # In-memory user store (replace with database in production)
@@ -455,19 +463,23 @@ async def change_password(
 async def verify_email(request: EmailVerificationRequest):
     """Verify email address with token"""
     
+    logger.info(f"[Verify Email] Received verification request for token: {request.token[:20]}...")
+    
     if request.token not in EMAIL_VERIFICATION_TOKENS:
+        logger.warning(f"[Verify Email] Token not found. Available tokens: {list(EMAIL_VERIFICATION_TOKENS.keys())}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid verification token"
+            detail="Invalid or expired verification token. Please request a new verification email."
         )
     
     token_data = EMAIL_VERIFICATION_TOKENS[request.token]
     
     if datetime.utcnow() > token_data["expires"]:
         del EMAIL_VERIFICATION_TOKENS[request.token]
+        logger.warning(f"[Verify Email] Token expired for email: {token_data['email']}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Verification token expired"
+            detail="Verification token has expired. Please request a new verification email."
         )
     
     # Get user and mark as verified
@@ -475,11 +487,51 @@ async def verify_email(request: EmailVerificationRequest):
     
     if user:
         user["is_verified"] = True
+        logger.info(f"[Verify Email] User {user['username']} verified successfully")
+    else:
+        logger.warning(f"[Verify Email] User not found for email: {token_data['email']}")
     
     # Delete used token
     del EMAIL_VERIFICATION_TOKENS[request.token]
     
     return {"message": "Email verified successfully"}
+
+
+@router.post("/resend-verification")
+async def resend_verification(request: ResendVerificationRequest, background_tasks: BackgroundTasks):
+    """Resend verification email"""
+    
+    user = get_user_by_email(request.email)
+    
+    if not user:
+        # Return success to prevent email enumeration
+        return {"message": "If an account exists with this email, a new verification email has been sent."}
+    
+    if user.get("is_verified"):
+        return {"message": "This email is already verified. You can log in."}
+    
+    # Get settings and email service
+    settings = get_settings()
+    
+    if not settings.email.enabled:
+        return {"message": "Email verification is not required. You can log in."}
+    
+    email_service = get_email_service()
+    
+    # Create new verification token
+    verification_token = create_email_verification_token(user["id"], user["email"])
+    
+    # Send email in background
+    background_tasks.add_task(
+        email_service.send_verification_email,
+        user["email"],
+        verification_token,
+        user["username"]
+    )
+    
+    logger.info(f"[Resend Verification] New verification email sent to: {user['email']}")
+    
+    return {"message": "A new verification email has been sent. Please check your inbox."}
 
 
 @router.get("/me")
