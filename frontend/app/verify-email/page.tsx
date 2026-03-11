@@ -21,7 +21,7 @@ function VerifyEmailContent() {
 
     const verifyEmail = async () => {
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://vulnscope-api.onrender.com/api/v1';
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://vulnscope-api.onrender.com';
         const response = await fetch(`${apiUrl}/auth/verify-email`, {
           method: 'POST',
           headers: {
