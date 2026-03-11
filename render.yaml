@@ -34,6 +34,11 @@ services:
         value: INFO
       - key: PORT
         value: 8000
+      # Email Configuration (set these in Render Dashboard)
+      - key: VULNSCOPE_EMAIL__ENABLED
+        value: false
+      - key: VULNSCOPE_EMAIL__FRONTEND_URL
+        value: https://vulnscope-frontend.onrender.com
 
   # ===================
   # Frontend (Next.js)

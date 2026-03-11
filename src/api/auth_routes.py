@@ -21,6 +21,7 @@ from .security import (
     InputValidator,
     get_settings
 )
+from src.utils.email_service import get_email_service
 
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -189,9 +190,12 @@ def get_user_by_email(email: str) -> Optional[dict]:
     return None
 
 
-def create_user(username: str, email: str, password: str, full_name: Optional[str] = None) -> dict:
+def create_user(username: str, email: str, password: str, full_name: Optional[str] = None, auto_verify: bool = False) -> dict:
     """Create a new user"""
     user_id = secrets.token_hex(8)
+    
+    # Get settings to check if email is enabled
+    settings = get_settings()
     
     user = {
         "id": user_id,
@@ -201,7 +205,7 @@ def create_user(username: str, email: str, password: str, full_name: Optional[st
         "hashed_password": pwd_context.hash(password),
         "roles": ["user"],  # Default role
         "is_active": True,
-        "is_verified": True,  # Auto-verify for demo (set to False in production with email)
+        "is_verified": auto_verify or not settings.email.enabled,  # Auto-verify if email disabled
     }
     
     MOCK_USERS[username.lower()] = user
@@ -238,15 +242,31 @@ async def register(request: RegisterRequest, background_tasks: BackgroundTasks):
         full_name=request.full_name
     )
     
-    # In production, send verification email in background
-    # verification_token = create_email_verification_token(user["id"], user["email"])
-    # background_tasks.add_task(send_verification_email, user["email"], verification_token)
+    # Get settings and email service
+    settings = get_settings()
+    email_service = get_email_service()
+    
+    # Send verification email if email is enabled
+    if settings.email.enabled and not user.get("is_verified"):
+        verification_token = create_email_verification_token(user["id"], user["email"])
+        
+        # Send email in background
+        background_tasks.add_task(
+            email_service.send_verification_email,
+            user["email"],
+            verification_token,
+            user["username"]
+        )
+        
+        message = "Registration successful. Please check your email to verify your account."
+    else:
+        message = "Registration successful. You can now log in."
     
     return RegisterResponse(
         user_id=user["id"],
         username=user["username"],
         email=user["email"],
-        message="Registration successful. Please check your email to verify your account."
+        message=message
     )
 
 
@@ -364,9 +384,18 @@ async def request_password_reset(request: PasswordResetRequest, background_tasks
     if user:
         reset_token = create_password_reset_token(request.email)
         
-        # In production, send reset email in background
-        # background_tasks.add_task(send_password_reset_email, request.email, reset_token)
-        pass
+        # Get settings and email service
+        settings = get_settings()
+        email_service = get_email_service()
+        
+        # Send reset email if email is enabled
+        if settings.email.enabled:
+            background_tasks.add_task(
+                email_service.send_password_reset_email,
+                request.email,
+                reset_token,
+                user["username"]
+            )
     
     return {
         "message": "If an account exists with this email, a password reset link has been sent."

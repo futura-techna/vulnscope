@@ -131,6 +131,19 @@ class EvidenceConfig(BaseModel):
     compression: bool = Field(default=True)
 
 
+class EmailConfig(BaseModel):
+    """Email configuration for notifications"""
+    smtp_host: str = Field(default="smtp.gmail.com")
+    smtp_port: int = Field(default=587)
+    smtp_user: Optional[str] = Field(default=None)
+    smtp_password: Optional[str] = Field(default=None)
+    smtp_use_tls: bool = Field(default=True)
+    from_email: Optional[str] = Field(default=None)
+    from_name: str = Field(default="VulnScope")
+    frontend_url: str = Field(default="http://localhost:3000")
+    enabled: bool = Field(default=False)
+
+
 class Settings(BaseSettings):
     """Main application settings"""
     
@@ -165,6 +178,9 @@ class Settings(BaseSettings):
     
     # Evidence
     evidence: EvidenceConfig = Field(default_factory=EvidenceConfig)
+    
+    # Email
+    email: EmailConfig = Field(default_factory=EmailConfig)
     
     # Output
     output_format: OutputFormat = Field(default=OutputFormat.JSON)
