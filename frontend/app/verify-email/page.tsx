@@ -11,8 +11,47 @@ function VerifyEmailContent() {
   const [resendEmail, setResendEmail] = useState('');
   const [resendStatus, setResendStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [resendMessage, setResendMessage] = useState('');
+  const [retryCount, setRetryCount] = useState(0);
+  const [isRetrying, setIsRetrying] = useState(false);
   const searchParams = useSearchParams();
   const router = useRouter();
+
+  const verifyEmail = async (token: string, isRetry: boolean = false) => {
+    if (isRetry) {
+      setIsRetrying(true);
+    }
+    
+    try {
+      // Use relative URL to go through Next.js API route
+      const response = await fetch('/api/auth/verify-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setStatus('success');
+        setMessage('Votre email a été vérifié avec succès! Vous pouvez maintenant vous connecter.');
+        // Redirect to login after 3 seconds
+        setTimeout(() => {
+          router.push('/?auth=login');
+        }, 3000);
+      } else {
+        setStatus('error');
+        setMessage(data.detail || 'Erreur lors de la vérification de l\'email.');
+      }
+    } catch (error) {
+      console.error('Verification error:', error);
+      setStatus('error');
+      setMessage('Erreur de connexion au serveur. Veuillez réessayer.');
+    } finally {
+      setIsRetrying(false);
+    }
+  };
 
   useEffect(() => {
     const token = searchParams.get('token');
@@ -23,39 +62,17 @@ function VerifyEmailContent() {
       return;
     }
 
-    const verifyEmail = async () => {
-      try {
-        // Use relative URL to go through Next.js API route
-        const response = await fetch('/api/auth/verify-email', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ token }),
-        });
-
-        const data = await response.json();
-
-        if (response.ok) {
-          setStatus('success');
-          setMessage('Votre email a été vérifié avec succès! Vous pouvez maintenant vous connecter.');
-          // Redirect to login after 3 seconds
-          setTimeout(() => {
-            router.push('/?auth=login');
-          }, 3000);
-        } else {
-          setStatus('error');
-          setMessage(data.detail || 'Erreur lors de la vérification de l\'email.');
-        }
-      } catch (error) {
-        console.error('Verification error:', error);
-        setStatus('error');
-        setMessage('Erreur de connexion au serveur. Veuillez réessayer.');
-      }
-    };
-
-    verifyEmail();
+    verifyEmail(token);
   }, [searchParams, router]);
+
+  const handleRetry = () => {
+    const token = searchParams.get('token');
+    if (token) {
+      setRetryCount(prev => prev + 1);
+      setStatus('loading');
+      verifyEmail(token, true);
+    }
+  };
 
   const handleResendVerification = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,6 +92,19 @@ function VerifyEmailContent() {
       
       setResendStatus('success');
       setResendMessage(data.message || 'Un nouvel email de vérification a été envoyé.');
+      
+      // If verification URL is returned (email disabled mode), show it
+      if (data.verification_url || data.debug_url) {
+        const verifyUrl = data.verification_url || data.debug_url;
+        console.log('[Resend] Verification URL:', verifyUrl);
+        setResendMessage(data.message);
+        
+        // Store the URL and show a link instead of auto-redirect
+        // Auto-redirect after 3 seconds
+        setTimeout(() => {
+          window.location.href = verifyUrl;
+        }, 3000);
+      }
     } catch (error) {
       console.error('Resend verification error:', error);
       setResendStatus('error');
@@ -142,6 +172,27 @@ function VerifyEmailContent() {
                 <p className="text-gray-400 mb-6">
                   {message}
                 </p>
+                
+                {/* Retry button for service unavailable errors */}
+                {(message.includes('indisponible') || message.includes('expiré') || message.includes('connecter')) && (
+                  <button
+                    onClick={handleRetry}
+                    disabled={isRetrying}
+                    className="w-full mb-4 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {isRetrying ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        Nouvelle tentative...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="h-4 w-4" />
+                        Réessayer la vérification
+                      </>
+                    )}
+                  </button>
+                )}
                 
                 {/* Resend verification form */}
                 <div className="bg-gray-700/50 rounded-lg p-4 mb-4">

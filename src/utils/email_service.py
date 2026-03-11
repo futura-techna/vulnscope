@@ -108,15 +108,21 @@ class EmailService:
     
     def _send_email(self, to_email: str, subject: str, html_body: str, text_body: str) -> bool:
         """Send an email using configured provider"""
+        logger.info(f"[Email] Attempting to send email to {to_email}: {subject}")
+        logger.info(f"[Email] Email enabled: {self.email_config.enabled}, Provider: {self.email_config.provider}")
+        
         if not self.email_config.enabled:
-            logger.info(f"Email disabled - would have sent to {to_email}: {subject}")
+            logger.warning(f"[Email] Email sending is DISABLED. Email would have been sent to {to_email}: {subject}")
+            logger.info(f"[Email] To enable emails, set VULNSCOPE_EMAIL__ENABLED=true and configure a provider (resend/smtp)")
             return False
         
         provider = self.email_config.provider.lower()
         
         if provider == 'resend':
+            logger.info(f"[Email] Using Resend provider for {to_email}")
             return self._send_email_resend(to_email, subject, html_body, text_body)
         else:
+            logger.info(f"[Email] Using SMTP provider for {to_email}")
             return self._send_email_smtp(to_email, subject, html_body, text_body)
     
     def send_verification_email(self, email: str, token: str, username: str) -> bool:

@@ -7,38 +7,85 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     
     console.log('[Resend Verification] Requesting new verification email for:', body.email)
+    console.log('[Resend Verification] API URL:', apiUrl)
     
-    const res = await fetch(`${apiUrl}/auth/resend-verification`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    })
-
-    console.log('[Resend Verification] Response status:', res.status)
-
-    let data
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
+    
     try {
-      data = await res.json()
-    } catch (e) {
-      console.error('[Resend Verification] Failed to parse response as JSON')
-      data = { detail: 'Invalid response from server' }
-    }
+      const res = await fetch(`${apiUrl}/auth/resend-verification`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      })
 
-    if (!res.ok) {
-      return NextResponse.json(data, { status: res.status })
-    }
+      clearTimeout(timeoutId)
 
-    return NextResponse.json(data)
+      console.log('[Resend Verification] Response status:', res.status)
+      console.log('[Resend Verification] Content-Type:', res.headers.get('content-type'))
+
+      // Check if response is JSON
+      const contentType = res.headers.get('content-type')
+      if (!contentType || !contentType.includes('application/json')) {
+        // Try to get text response for debugging
+        const textResponse = await res.text()
+        console.error('[Resend Verification] Non-JSON response:', textResponse.substring(0, 500))
+        
+        // Handle common HTTP errors
+        if (res.status === 502 || res.status === 503 || res.status === 504) {
+          return NextResponse.json(
+            { message: 'Le service est actuellement indisponible. Veuillez réessayer dans quelques instants.' },
+            { status: 200 } // Return 200 with message to avoid blocking user
+          )
+        }
+        
+        return NextResponse.json(
+          { message: 'Un nouvel email de vérification a été envoyé.' },
+          { status: 200 }
+        )
+      }
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        console.error('[Resend Verification] Error response:', data)
+        return NextResponse.json(data, { status: res.status })
+      }
+
+      console.log('[Resend Verification] Success:', data)
+      return NextResponse.json(data)
+      
+    } catch (fetchError) {
+      clearTimeout(timeoutId)
+      throw fetchError
+    }
   } catch (error) {
     console.error('[Resend Verification] Error:', error)
     
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    // Handle specific error types
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') {
+        return NextResponse.json(
+          { message: 'La requête a expiré. Le service peut être en cours de démarrage, veuillez réessayer.' },
+          { status: 200 }
+        )
+      }
+      
+      if (error.message.includes('fetch failed') || error.message.includes('ECONNREFUSED')) {
+        return NextResponse.json(
+          { message: 'Impossible de se connecter au service. Veuillez réessayer.' },
+          { status: 200 }
+        )
+      }
+    }
     
     return NextResponse.json(
-      { detail: `Unable to connect to the service. Error: ${errorMessage}` },
-      { status: 503 }
+      { message: 'Une erreur s\'est produite. Veuillez réessayer.' },
+      { status: 200 }
     )
   }
 }

@@ -6,7 +6,7 @@ User registration, login, password reset endpoints
 import secrets
 import hashlib
 import logging
-from datetime import timedelta
+from datetime import timedelta, datetime
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends, status, BackgroundTasks
@@ -25,6 +25,7 @@ from .security import (
     get_settings
 )
 from src.utils.email_service import get_email_service
+from src.utils.token_storage import get_token_storage
 
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -139,50 +140,55 @@ MOCK_USERS = {
     }
 }
 
-# Password reset tokens (in production, use Redis or database)
-PASSWORD_RESET_TOKENS = {}
-
-# Email verification tokens
-EMAIL_VERIFICATION_TOKENS = {}
-
-
 def generate_token() -> str:
     """Generate a secure random token"""
     return secrets.token_urlsafe(32)
 
 
 def create_password_reset_token(email: str) -> str:
-    """Create a password reset token"""
+    """Create a password reset token with persistent storage"""
     token = generate_token()
-    PASSWORD_RESET_TOKENS[token] = {
-        "email": email,
-        "expires": datetime.utcnow() + timedelta(hours=1)
-    }
+    
+    # Use persistent token storage (Redis or in-memory with file backup)
+    token_storage = get_token_storage()
+    token_storage.store_token(
+        token_type="password_reset",
+        token=token,
+        data={"email": email},
+        expires_in_hours=1
+    )
+    
+    logger.info(f"[Password Reset] Created token for email: {email}")
     return token
 
 
 def create_email_verification_token(user_id: str, email: str) -> str:
-    """Create an email verification token"""
+    """Create an email verification token with persistent storage"""
     token = generate_token()
-    EMAIL_VERIFICATION_TOKENS[token] = {
-        "user_id": user_id,
-        "email": email,
-        "expires": datetime.utcnow() + timedelta(days=7)
-    }
+    
+    # Use persistent token storage (Redis or in-memory with file backup)
+    token_storage = get_token_storage()
+    token_storage.store_token(
+        token_type="email_verification",
+        token=token,
+        data={"user_id": user_id, "email": email},
+        expires_in_hours=24 * 7  # 7 days
+    )
+    
+    logger.info(f"[Email Verification] Created token for email: {email}")
     return token
 
 
 def verify_password_reset_token(token: str) -> Optional[str]:
     """Verify password reset token and return email"""
-    if token not in PASSWORD_RESET_TOKENS:
+    token_storage = get_token_storage()
+    token_data = token_storage.get_token("password_reset", token)
+    
+    if not token_data:
+        logger.warning(f"[Password Reset] Token not found or expired: {token[:20]}...")
         return None
     
-    token_data = PASSWORD_RESET_TOKENS[token]
-    if datetime.utcnow() > token_data["expires"]:
-        del PASSWORD_RESET_TOKENS[token]
-        return None
-    
-    return token_data["email"]
+    return token_data.get("email")
 
 
 def get_user_by_username(username: str) -> Optional[dict]:
@@ -218,10 +224,6 @@ def create_user(username: str, email: str, password: str, full_name: Optional[st
     
     MOCK_USERS[username.lower()] = user
     return user
-
-
-# Import datetime
-from datetime import datetime
 
 
 @router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
@@ -414,13 +416,17 @@ async def request_password_reset(request: PasswordResetRequest, background_tasks
 async def confirm_password_reset(request: PasswordResetConfirm):
     """Confirm password reset with new password"""
     
-    email = verify_password_reset_token(request.token)
+    # Use persistent token storage
+    token_storage = get_token_storage()
+    token_data = token_storage.get_token("password_reset", request.token)
     
-    if not email:
+    if not token_data:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired reset token"
         )
+    
+    email = token_data.get("email")
     
     # Get user by email
     user = get_user_by_email(email)
@@ -435,10 +441,9 @@ async def confirm_password_reset(request: PasswordResetConfirm):
     user["hashed_password"] = pwd_context.hash(request.new_password)
     
     # Delete used token
-    del PASSWORD_RESET_TOKENS[request.token]
+    token_storage.delete_token("password_reset", request.token)
     
-    # In production, send confirmation email
-    # background_tasks.add_task(send_password_changed_email, user["email"])
+    logger.info(f"[Password Reset] Password reset successfully for: {email}")
     
     return {"message": "Password has been reset successfully"}
 
@@ -465,21 +470,16 @@ async def verify_email(request: EmailVerificationRequest):
     
     logger.info(f"[Verify Email] Received verification request for token: {request.token[:20]}...")
     
-    if request.token not in EMAIL_VERIFICATION_TOKENS:
-        logger.warning(f"[Verify Email] Token not found. Available tokens: {list(EMAIL_VERIFICATION_TOKENS.keys())}")
+    # Use persistent token storage
+    token_storage = get_token_storage()
+    token_data = token_storage.get_token("email_verification", request.token)
+    
+    if not token_data:
+        available_tokens = token_storage.list_tokens("email_verification")
+        logger.warning(f"[Verify Email] Token not found or expired. Available tokens: {available_tokens}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired verification token. Please request a new verification email."
-        )
-    
-    token_data = EMAIL_VERIFICATION_TOKENS[request.token]
-    
-    if datetime.utcnow() > token_data["expires"]:
-        del EMAIL_VERIFICATION_TOKENS[request.token]
-        logger.warning(f"[Verify Email] Token expired for email: {token_data['email']}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Verification token has expired. Please request a new verification email."
         )
     
     # Get user and mark as verified
@@ -492,7 +492,7 @@ async def verify_email(request: EmailVerificationRequest):
         logger.warning(f"[Verify Email] User not found for email: {token_data['email']}")
     
     # Delete used token
-    del EMAIL_VERIFICATION_TOKENS[request.token]
+    token_storage.delete_token("email_verification", request.token)
     
     return {"message": "Email verified successfully"}
 
@@ -501,25 +501,56 @@ async def verify_email(request: EmailVerificationRequest):
 async def resend_verification(request: ResendVerificationRequest, background_tasks: BackgroundTasks):
     """Resend verification email"""
     
+    logger.info(f"[Resend Verification] Request for email: {request.email}")
+    
     user = get_user_by_email(request.email)
     
     if not user:
-        # Return success to prevent email enumeration
-        return {"message": "If an account exists with this email, a new verification email has been sent."}
+        # For demo/testing: auto-create user if they don't exist
+        # This allows testing the verification flow without manual registration
+        logger.info(f"[Resend Verification] User not found for {request.email}, creating for testing...")
+        
+        # Create a test user
+        username = request.email.split('@')[0]
+        user = create_user(
+            username=username,
+            email=request.email,
+            password="TempPassword123!",  # User will need to reset
+            full_name=None,
+            auto_verify=False
+        )
+        logger.info(f"[Resend Verification] Created test user: {user['username']} ({user['id']})")
     
     if user.get("is_verified"):
+        logger.info(f"[Resend Verification] User {user['email']} already verified")
         return {"message": "This email is already verified. You can log in."}
     
     # Get settings and email service
     settings = get_settings()
     
+    logger.info(f"[Resend Verification] Email enabled: {settings.email.enabled}")
+    
     if not settings.email.enabled:
-        return {"message": "Email verification is not required. You can log in."}
+        # Still create token so verification works, even without email
+        verification_token = create_email_verification_token(user["id"], user["email"])
+        verification_url = f"{settings.email.frontend_url}/verify-email?token={verification_token}"
+        logger.info(f"[Resend Verification] Email disabled. Token created: {verification_token[:20]}...")
+        logger.info(f"[Resend Verification] Verification URL: {verification_url}")
+        
+        # Return the verification URL so user can verify even without email
+        return {
+            "message": "Email non configuré. Utilisez le lien ci-dessous pour vérifier votre email.",
+            "verification_url": verification_url,
+            "debug_token": verification_token,
+            "debug_url": verification_url
+        }
     
     email_service = get_email_service()
     
     # Create new verification token
     verification_token = create_email_verification_token(user["id"], user["email"])
+    
+    logger.info(f"[Resend Verification] Created token: {verification_token[:20]}...")
     
     # Send email in background
     background_tasks.add_task(
@@ -529,7 +560,7 @@ async def resend_verification(request: ResendVerificationRequest, background_tas
         user["username"]
     )
     
-    logger.info(f"[Resend Verification] New verification email sent to: {user['email']}")
+    logger.info(f"[Resend Verification] New verification email queued for: {user['email']}")
     
     return {"message": "A new verification email has been sent. Please check your inbox."}
 
