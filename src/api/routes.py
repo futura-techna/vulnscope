@@ -5,7 +5,7 @@ REST API endpoints for VulnScope platform
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
 from fastapi.responses import JSONResponse
-from typing import List, Optional
+from typing import List, Optional, Dict
 from uuid import UUID
 
 from .schemas import (
@@ -17,6 +17,9 @@ from .schemas import (
     ComplianceRequest, ComplianceResponse,
 )
 from ..core.models import Target, Scan, Finding, Endpoint, Status
+
+# In-memory storage (replace with database in production)
+_targets_db: Dict[UUID, Target] = {}
 from ..discovery.crawler import Crawler
 from ..discovery.openapi_importer import OpenAPIImporter
 from ..discovery.graphql_importer import GraphQLImporter
@@ -36,7 +39,6 @@ router = APIRouter()
 @router.post("/targets", response_model=TargetResponse, tags=["targets"])
 async def create_target(target: TargetCreate):
     """Create a new target to scan"""
-    # In production, save to database
     new_target = Target(
         name=target.name,
         url=target.url,
@@ -45,6 +47,9 @@ async def create_target(target: TargetCreate):
         auth_type=target.auth_type,
         auth_config=target.auth_config or {},
     )
+    
+    # Save to in-memory storage
+    _targets_db[new_target.id] = new_target
     
     return TargetResponse(
         id=new_target.id,
@@ -60,21 +65,47 @@ async def create_target(target: TargetCreate):
 @router.get("/targets", response_model=List[TargetResponse], tags=["targets"])
 async def list_targets(skip: int = 0, limit: int = 100):
     """List all targets"""
-    # In production, fetch from database
-    return []
+    targets = list(_targets_db.values())
+    # Apply pagination
+    return [
+        TargetResponse(
+            id=t.id,
+            name=t.name,
+            url=str(t.url),
+            description=t.description,
+            tags=t.tags,
+            auth_type=t.auth_type,
+            created_at=t.created_at,
+        )
+        for t in targets[skip:skip + limit]
+    ]
 
 
 @router.get("/targets/{target_id}", response_model=TargetResponse, tags=["targets"])
 async def get_target(target_id: UUID):
     """Get target by ID"""
-    # In production, fetch from database
-    raise HTTPException(status_code=404, detail="Target not found")
+    if target_id not in _targets_db:
+        raise HTTPException(status_code=404, detail="Target not found")
+    
+    t = _targets_db[target_id]
+    return TargetResponse(
+        id=t.id,
+        name=t.name,
+        url=str(t.url),
+        description=t.description,
+        tags=t.tags,
+        auth_type=t.auth_type,
+        created_at=t.created_at,
+    )
 
 
 @router.delete("/targets/{target_id}", tags=["targets"])
 async def delete_target(target_id: UUID):
     """Delete a target"""
-    # In production, delete from database
+    if target_id not in _targets_db:
+        raise HTTPException(status_code=404, detail="Target not found")
+    
+    del _targets_db[target_id]
     return {"status": "deleted", "target_id": str(target_id)}
 
 
