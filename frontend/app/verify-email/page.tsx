@@ -42,7 +42,12 @@ function VerifyEmailContent() {
         }, 3000);
       } else {
         setStatus('error');
-        setMessage(data.detail || 'Erreur lors de la vérification de l\'email.');
+        // Handle specific error cases
+        if (response.status === 429 || data.detail?.includes('Trop de requêtes')) {
+          setMessage('Trop de requêtes. Veuillez patienter quelques instants avant de réessayer.');
+        } else {
+          setMessage(data.detail || 'Erreur lors de la vérification de l\'email.');
+        }
       }
     } catch (error) {
       console.error('Verification error:', error);
@@ -89,6 +94,19 @@ function VerifyEmailContent() {
       });
 
       const data = await response.json();
+      
+      // Handle rate limiting
+      if (response.status === 429 || data.detail?.includes('Trop de requêtes')) {
+        setResendStatus('error');
+        setResendMessage('Trop de requêtes. Veuillez patienter quelques instants avant de réessayer.');
+        return;
+      }
+      
+      if (!response.ok) {
+        setResendStatus('error');
+        setResendMessage(data.detail || 'Erreur lors de l\'envoi. Veuillez réessayer.');
+        return;
+      }
       
       setResendStatus('success');
       setResendMessage(data.message || 'Un nouvel email de vérification a été envoyé.');
@@ -173,8 +191,8 @@ function VerifyEmailContent() {
                   {message}
                 </p>
                 
-                {/* Retry button for service unavailable errors */}
-                {(message.includes('indisponible') || message.includes('expiré') || message.includes('connecter')) && (
+                {/* Retry button for service unavailable or rate limit errors */}
+                {(message.includes('indisponible') || message.includes('expiré') || message.includes('connecter') || message.includes('Trop de requêtes')) && (
                   <button
                     onClick={handleRetry}
                     disabled={isRetrying}

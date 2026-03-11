@@ -35,6 +35,14 @@ export async function POST(request: NextRequest) {
         const textResponse = await res.text()
         console.error('[Resend Verification] Non-JSON response:', textResponse.substring(0, 500))
         
+        // Handle rate limiting
+        if (res.status === 429) {
+          return NextResponse.json(
+            { detail: 'Trop de requêtes. Veuillez patienter quelques instants avant de réessayer.' },
+            { status: 429 }
+          )
+        }
+        
         // Handle common HTTP errors
         if (res.status === 502 || res.status === 503 || res.status === 504) {
           return NextResponse.json(

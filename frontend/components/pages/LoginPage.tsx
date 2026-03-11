@@ -28,10 +28,21 @@ export function LoginPage({ onRegister, onForgotPassword }: LoginPageProps) {
       })
 
       if (result?.error) {
-        setError('Invalid username or password')
+        // Check for specific error messages from the backend
+        if (result.error.includes('Trop de requêtes') || result.error.includes('rate limit')) {
+          setError('Trop de tentatives de connexion. Veuillez patienter quelques instants avant de réessayer.')
+        } else if (result.error.includes('indisponible') || result.error.includes('unavailable')) {
+          setError('Le service est actuellement indisponible. Veuillez réessayer dans quelques instants.')
+        } else if (result.error.includes('expiré') || result.error.includes('timeout')) {
+          setError('La requête a expiré. Le service peut être en cours de démarrage, veuillez réessayer.')
+        } else if (result.error.includes('Impossible de se connecter') || result.error.includes('connect')) {
+          setError('Impossible de se connecter au service d\'authentification. Veuillez réessayer.')
+        } else {
+          setError('Nom d\'utilisateur ou mot de passe invalide')
+        }
       }
     } catch (err) {
-      setError('An error occurred. Please try again.')
+      setError('Une erreur s\'est produite. Veuillez réessayer.')
     } finally {
       setLoading(false)
     }
