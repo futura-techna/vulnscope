@@ -1,0 +1,100 @@
+{
+  "target": "https://maths-plus-plus.vercel.app/",
+  "scan_date": "2026-03-12T00:36:38.138401",
+  "findings": [
+    {
+      "id": "911e70bc-0992-45d4-b638-43ac5ca52fa5",
+      "type": "Missing Security Header",
+      "severity": "Medium",
+      "title": "Missing Content-Security-Policy Header",
+      "description": "Content-Security-Policy (CSP) header is not set. This increases XSS risk.",
+      "owasp": "A05:2021 - Security Misconfiguration",
+      "cwe": "CWE-1021",
+      "remediation": "Add Content-Security-Policy header to responses"
+    },
+    {
+      "id": "9662f17c-84d1-4857-a59b-280c8e7eaf18",
+      "type": "Missing Security Header",
+      "severity": "Low",
+      "title": "Missing X-XSS-Protection Header",
+      "description": "X-XSS-Protection header is not set. Legacy XSS filter not enabled.",
+      "owasp": "A05:2021 - Security Misconfiguration",
+      "cwe": "CWE-79",
+      "remediation": "Add X-XSS-Protection header to responses"
+    },
+    {
+      "id": "e71d75ab-4d2d-44d7-ab11-986a816b4015",
+      "type": "Information Disclosure",
+      "severity": "Info",
+      "title": "Server Header Exposes Technology",
+      "description": "The Server header reveals: Vercel. This helps attackers target specific vulnerabilities.",
+      "owasp": "A01:2021 - Broken Access Control",
+      "cwe": "CWE-200",
+      "remediation": "Remove or obfuscate Server header"
+    },
+    {
+      "id": "1df1eeec-cd16-405f-b9a5-dab5bae5dc97",
+      "type": "CORS",
+      "severity": "Medium",
+      "title": "Overly Permissive CORS Policy",
+      "description": "The server allows requests from any origin (Access-Control-Allow-Origin: *).",
+      "owasp": "A01:2021 - Broken Access Control",
+      "cwe": "CWE-942",
+      "remediation": "Restrict CORS to trusted origins only"
+    }
+  ],
+  "statistics": {
+    "total_findings": 4,
+    "critical": 0,
+    "high": 0,
+    "medium": 2,
+    "low": 1,
+    "info": 1
+  },
+  "site_info": {
+    "accessibility": {
+      "accessible": true,
+      "status_code": 200,
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Age": "87034",
+        "Cache-Control": "public, max-age=0, must-revalidate",
+        "Content-Disposition": "inline",
+        "Content-Encoding": "gzip",
+        "Content-Type": "text/html; charset=utf-8",
+        "Date": "Wed, 11 Mar 2026 23:36:38 GMT",
+        "Etag": "W/\"14db956e18c9260499f91ae49a7d9297\"",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+        "Referrer-Policy": "origin-when-cross-origin",
+        "Server": "Vercel",
+        "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
+        "Vary": "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "X-Matched-Path": "/accueil",
+        "X-Nextjs-Prerender": "1",
+        "X-Nextjs-Stale-Time": "300",
+        "X-Vercel-Cache": "HIT",
+        "X-Vercel-Id": "cdg1::jvnxz-1773272198718-16821cf86f6e",
+        "Transfer-Encoding": "chunked"
+      },
+      "server": "Vercel",
+      "technologies": [],
+      "error": null
+    },
+    "ssl": {
+      "https": true,
+      "tls_version": "TLSv1.3",
+      "certificate_valid": true,
+      "findings": []
+    }
+  },
+  "crawl_results": {
+    "pages": [],
+    "endpoints": [],
+    "forms": [],
+    "links": [],
+    "external_links": [],
+    "errors": []
+  }
+}
