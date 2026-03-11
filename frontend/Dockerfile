@@ -41,12 +41,17 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# Copy and setup entrypoint script for runtime configuration
+COPY --chown=nextjs:nodejs docker-entrypoint.sh /app/
+RUN chmod +x /app/docker-entrypoint.sh
+
 USER nextjs
 
 EXPOSE 3000
 
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+ENV API_URL=http://localhost:8000
 
-# Use standalone server
-CMD ["node", "server.js"]
+# Use entrypoint script for runtime configuration
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

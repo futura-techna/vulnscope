@@ -6,6 +6,9 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     
+    console.log('[Register] Attempting registration for:', body.username, body.email)
+    console.log('[Register] API URL:', `${apiUrl}/auth/register`)
+    
     const res = await fetch(`${apiUrl}/auth/register`, {
       method: 'POST',
       headers: {
@@ -14,7 +17,17 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(body),
     })
 
-    const data = await res.json()
+    console.log('[Register] Response status:', res.status)
+
+    let data
+    try {
+      data = await res.json()
+    } catch (e) {
+      console.error('[Register] Failed to parse response as JSON')
+      data = { detail: 'Invalid response from server' }
+    }
+
+    console.log('[Register] Response data:', data)
 
     if (!res.ok) {
       return NextResponse.json(data, { status: res.status })
@@ -22,10 +35,14 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(data, { status: 201 })
   } catch (error) {
-    console.error('Registration error:', error)
+    console.error('[Register] Registration error:', error)
+    
+    // Provide more helpful error message
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    
     return NextResponse.json(
-      { detail: 'An error occurred during registration' },
-      { status: 500 }
+      { detail: `Unable to connect to the registration service. Please ensure the backend is running. Error: ${errorMessage}` },
+      { status: 503 }
     )
   }
 }
