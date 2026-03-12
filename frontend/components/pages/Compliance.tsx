@@ -1,20 +1,50 @@
 'use client'
 
+import { useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import { FileCheck, CheckCircle, AlertTriangle, Loader2, RefreshCw } from 'lucide-react'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { cn } from '@/lib/utils'
 import { useCompliance, useComplianceCategories, useFindings } from '@/lib/hooks/useApi'
+
+// Dynamically import recharts components to avoid SSR issues
+const BarChart = dynamic(() => import('recharts').then(mod => mod.BarChart), { ssr: false })
+const Bar = dynamic(() => import('recharts').then(mod => mod.Bar), { ssr: false })
+const XAxis = dynamic(() => import('recharts').then(mod => mod.XAxis), { ssr: false })
+const YAxis = dynamic(() => import('recharts').then(mod => mod.YAxis), { ssr: false })
+const CartesianGrid = dynamic(() => import('recharts').then(mod => mod.CartesianGrid), { ssr: false })
+const Tooltip = dynamic(() => import('recharts').then(mod => mod.Tooltip), { ssr: false })
+const ResponsiveContainer = dynamic(() => import('recharts').then(mod => mod.ResponsiveContainer), { ssr: false })
+const Cell = dynamic(() => import('recharts').then(mod => mod.Cell), { ssr: false })
 
 interface ComplianceCategory {
   name: string
   score: number
 }
 
+interface ComplianceStandard {
+  name: string
+  score: number
+  status: 'pass' | 'warning' | 'fail'
+  requirements_met: number
+  requirements_total: number
+}
+
 export function Compliance() {
+  const [mounted, setMounted] = useState(false)
+  
   // Use React Query hooks for automatic refetching and cache invalidation
-  const { data: standards = [], isLoading: standardsLoading, error: standardsError, refetch: refetchStandards } = useCompliance()
+  const { data: standardsData, isLoading: standardsLoading, error: standardsError, refetch: refetchStandards } = useCompliance()
   const { data: findingsData, isLoading: findingsLoading } = useFindings({ limit: 100 })
-  const { data: categories = [], isLoading: categoriesLoading, refetch: refetchCategories } = useComplianceCategories()
+  const { data: categoriesData, isLoading: categoriesLoading, refetch: refetchCategories } = useComplianceCategories()
+
+  // Ensure component is mounted before rendering charts (SSR safety)
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  // Safely extract data with defaults
+  const standards: ComplianceStandard[] = Array.isArray(standardsData) ? standardsData : []
+  const categories: ComplianceCategory[] = Array.isArray(categoriesData) ? categoriesData : []
 
   const isLoading = standardsLoading || findingsLoading || categoriesLoading
   const error = standardsError ? 'Failed to load compliance data' : null
@@ -107,29 +137,31 @@ export function Compliance() {
       )}
 
       {/* Compliance by Category */}
-      {categories.length > 0 && (
+      {mounted && categories.length > 0 && (
         <div className="bg-card rounded-xl p-6 border">
           <h2 className="text-lg font-semibold mb-4">Compliance by Category</h2>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={categories} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-              <XAxis type="number" domain={[0, 100]} className="text-xs" />
-              <YAxis type="category" dataKey="name" width={150} className="text-xs" />
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: 'hsl(var(--card))', 
-                  border: '1px solid hsl(var(--border))',
-                  borderRadius: '8px'
-                }}
-                formatter={(value: number) => [`${Math.round(value)}%`, 'Score']}
-              />
-              <Bar dataKey="score" radius={[0, 4, 4, 0]}>
-                {categories.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={getScoreColor(entry.score)} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          {mounted && (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={categories} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis type="number" domain={[0, 100]} className="text-xs" />
+                <YAxis type="category" dataKey="name" width={150} className="text-xs" />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: 'hsl(var(--card))', 
+                    border: '1px solid hsl(var(--border))',
+                    borderRadius: '8px'
+                  }}
+                  formatter={(value: number) => [`${Math.round(value)}%`, 'Score']}
+                />
+                <Bar dataKey="score" radius={[0, 4, 4, 0]}>
+                  {categories.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={getScoreColor(entry.score)} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </div>
       )}
 

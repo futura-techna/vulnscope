@@ -3,13 +3,17 @@ VulnScope - API Routes
 REST API endpoints for VulnScope platform
 """
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Depends
 from fastapi.responses import JSONResponse
 from typing import List, Optional, Dict, Any
 from uuid import UUID, uuid4
 from datetime import datetime
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
 import asyncio
 import random
+import os
+import json
 
 from .schemas import (
     TargetCreate, TargetResponse, TargetUpdate,
@@ -20,12 +24,29 @@ from .schemas import (
     ComplianceRequest, ComplianceResponse,
 )
 from ..core.models import Target, Scan, Finding, Endpoint, Status
+from ..database import (
+    get_session, get_or_create_session, init_db,
+    TargetModel, ScanModel, FindingModel, ReportModel, SettingsModel, ComplianceDataModel
+)
 
-# In-memory storage (replace with database in production)
+# Fallback in-memory storage (used if database is not available)
 _targets_db: Dict[UUID, Target] = {}
 _scans_db: Dict[UUID, Scan] = {}
 _findings_db: Dict[UUID, Finding] = {}
 _reports_db: Dict[UUID, Dict] = {}
+
+# Check if database is enabled
+USE_DATABASE = os.environ.get("DATABASE_URL") or os.environ.get("USE_DATABASE", "false").lower() == "true"
+
+
+async def get_db_session():
+    """Get database session if available, otherwise return None"""
+    if USE_DATABASE:
+        try:
+            return await get_or_create_session()
+        except Exception:
+            return None
+    return None
 
 from ..discovery.crawler import Crawler
 from ..discovery.openapi_importer import OpenAPIImporter

@@ -37,6 +37,15 @@ async def lifespan(app: FastAPI):
         logger.info(f"Redis URL configured: {bool(settings.redis.url)}")
         logger.info(f"Secret key configured: {bool(settings.secret_key)}")
         
+        # Initialize database
+        try:
+            from ..database import init_db
+            logger.info("Initializing database...")
+            await init_db()
+            logger.info("Database initialized successfully")
+        except Exception as db_error:
+            logger.warning(f"Database initialization failed (using in-memory storage): {db_error}")
+        
         # Test Redis connection if configured
         if settings.redis.url:
             try:
