@@ -63,13 +63,18 @@ export function Reports() {
     { id: 'pdf', name: 'PDF', icon: File, color: 'text-red-500' },
   ]
 
-  const handleDownloadReport = async (reportId: string) => {
+  const handleDownloadReport = async (reportId: string, format: string) => {
     try {
       const blob = await api.downloadReport(reportId)
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `report-${reportId}`
+      // Determine file extension based on format
+      let extension = format.toLowerCase()
+      if (extension === 'sarif') {
+        extension = 'sarif.json'
+      }
+      a.download = `vulnscope-report-${reportId}.${extension}`
       document.body.appendChild(a)
       a.click()
       window.URL.revokeObjectURL(url)
@@ -260,7 +265,7 @@ export function Reports() {
                       <td className="py-3 px-4 text-muted-foreground">{report.size || 'N/A'}</td>
                       <td className="py-3 px-4">
                         <button 
-                          onClick={() => handleDownloadReport(report.id)}
+                          onClick={() => handleDownloadReport(report.id, report.format)}
                           className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
                         >
                           <Download className="h-4 w-4" />

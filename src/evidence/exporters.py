@@ -22,6 +22,13 @@ def get_enum_value(value):
     return value
 
 
+def severity_matches(severity, target_severity) -> bool:
+    """Check if severity matches target, handling both enum and string values"""
+    sev_value = get_enum_value(severity).upper()
+    target_value = get_enum_value(target_severity).upper()
+    return sev_value == target_value
+
+
 class Exporter(ABC):
     """Base class for exporters"""
     
@@ -83,11 +90,11 @@ class JSONExporter(Exporter):
             "summary": {
                 "total_findings": len(findings),
                 "by_severity": {
-                    "critical": len([f for f in findings if f.severity == Severity.CRITICAL]),
-                    "high": len([f for f in findings if f.severity == Severity.HIGH]),
-                    "medium": len([f for f in findings if f.severity == Severity.MEDIUM]),
-                    "low": len([f for f in findings if f.severity == Severity.LOW]),
-                    "info": len([f for f in findings if f.severity == Severity.INFO]),
+                    "critical": len([f for f in findings if severity_matches(f.severity, Severity.CRITICAL)]),
+                    "high": len([f for f in findings if severity_matches(f.severity, Severity.HIGH)]),
+                    "medium": len([f for f in findings if severity_matches(f.severity, Severity.MEDIUM)]),
+                    "low": len([f for f in findings if severity_matches(f.severity, Severity.LOW)]),
+                    "info": len([f for f in findings if severity_matches(f.severity, Severity.INFO)]),
                 }
             },
             "findings": [
@@ -141,7 +148,7 @@ class XMLExporter(Exporter):
         
         severities = ET.SubElement(summary, "by_severity")
         for sev in Severity:
-            count = len([f for f in findings if f.severity == sev])
+            count = len([f for f in findings if severity_matches(f.severity, sev)])
             ET.SubElement(severities, sev.value).text = str(count)
         
         # Add findings
@@ -348,23 +355,23 @@ class HTMLExporter(Exporter):
         <h2>Summary</h2>
         <div class="summary">
             <div class="stat-card critical">
-                <div class="stat-value">{len([f for f in findings if f.severity == Severity.CRITICAL])}</div>
+                <div class="stat-value">{len([f for f in findings if severity_matches(f.severity, Severity.CRITICAL)])}</div>
                 <div class="stat-label">Critical</div>
             </div>
             <div class="stat-card high">
-                <div class="stat-value">{len([f for f in findings if f.severity == Severity.HIGH])}</div>
+                <div class="stat-value">{len([f for f in findings if severity_matches(f.severity, Severity.HIGH)])}</div>
                 <div class="stat-label">High</div>
             </div>
             <div class="stat-card medium">
-                <div class="stat-value">{len([f for f in findings if f.severity == Severity.MEDIUM])}</div>
+                <div class="stat-value">{len([f for f in findings if severity_matches(f.severity, Severity.MEDIUM)])}</div>
                 <div class="stat-label">Medium</div>
             </div>
             <div class="stat-card low">
-                <div class="stat-value">{len([f for f in findings if f.severity == Severity.LOW])}</div>
+                <div class="stat-value">{len([f for f in findings if severity_matches(f.severity, Severity.LOW)])}</div>
                 <div class="stat-label">Low</div>
             </div>
             <div class="stat-card info">
-                <div class="stat-value">{len([f for f in findings if f.severity == Severity.INFO])}</div>
+                <div class="stat-value">{len([f for f in findings if severity_matches(f.severity, Severity.INFO)])}</div>
                 <div class="stat-label">Info</div>
             </div>
         </div>
@@ -461,16 +468,17 @@ class SARIFExporter(Exporter):
         
         return json.dumps(sarif, indent=2)
     
-    def _map_severity_to_sarif_level(self, severity: Severity) -> str:
+    def _map_severity_to_sarif_level(self, severity) -> str:
         """Map severity to SARIF level"""
+        sev_str = get_enum_value(severity).upper()
         mapping = {
-            Severity.CRITICAL: "error",
-            Severity.HIGH: "error",
-            Severity.MEDIUM: "warning",
-            Severity.LOW: "note",
-            Severity.INFO: "note",
+            "CRITICAL": "error",
+            "HIGH": "error",
+            "MEDIUM": "warning",
+            "LOW": "note",
+            "INFO": "note",
         }
-        return mapping.get(severity, "note")
+        return mapping.get(sev_str, "note")
 
 
 class CSVExporter(Exporter):
@@ -494,10 +502,12 @@ class CSVExporter(Exporter):
         
         # Write findings
         for finding in findings:
+            description = finding.description or ""
+            description = description.replace('\n', ' ')
             writer.writerow([
                 str(finding.id),
                 finding.title,
-                finding.description.replace('\n', ' '),
+                description,
                 get_enum_value(finding.severity),
                 get_enum_value(finding.vulnerability_type),
                 get_enum_value(finding.status),
@@ -567,11 +577,11 @@ class PDFExporter(Exporter):
                 story.append(Paragraph("Summary", styles['Heading2']))
                 summary_data = [
                     ['Severity', 'Count'],
-                    ['Critical', str(len([f for f in findings if f.severity == Severity.CRITICAL]))],
-                    ['High', str(len([f for f in findings if f.severity == Severity.HIGH]))],
-                    ['Medium', str(len([f for f in findings if f.severity == Severity.MEDIUM]))],
-                    ['Low', str(len([f for f in findings if f.severity == Severity.LOW]))],
-                    ['Info', str(len([f for f in findings if f.severity == Severity.INFO]))],
+                    ['Critical', str(len([f for f in findings if severity_matches(f.severity, Severity.CRITICAL)]))],
+                    ['High', str(len([f for f in findings if severity_matches(f.severity, Severity.HIGH)]))],
+                    ['Medium', str(len([f for f in findings if severity_matches(f.severity, Severity.MEDIUM)]))],
+                    ['Low', str(len([f for f in findings if severity_matches(f.severity, Severity.LOW)]))],
+                    ['Info', str(len([f for f in findings if severity_matches(f.severity, Severity.INFO)]))],
                 ]
                 summary_table = Table(summary_data, colWidths=[2*inch, 1*inch])
                 summary_table.setStyle(TableStyle([

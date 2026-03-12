@@ -60,6 +60,7 @@ from ..fuzzer.fuzzer import Fuzzer
 from ..evidence.vault import EvidenceVault
 from ..evidence.policy import PolicyEngine
 from ..evidence.exporters import ExporterFactory
+from fastapi.responses import Response
 from ..evidence.compliance import ComplianceReport
 from ..config.settings import get_settings
 
@@ -1393,13 +1394,140 @@ async def get_report(report_id: UUID):
 
 @router.get("/reports/{report_id}/download", tags=["reports"])
 async def download_report(report_id: UUID):
-    """Download a report"""
+    """Download a report as a file"""
     if report_id not in _reports_db:
         raise HTTPException(status_code=404, detail="Report not found")
     
     report = _reports_db[report_id]
-    # In production, return actual file
-    return {"download_url": f"/reports/{report_id}/file.{report['format']}"}
+    report_format = report.get("format", "json").lower()
+    scan_id = report.get("scan_id")
+    
+    # Get findings for this scan
+    findings = []
+    scan = None
+    target = None
+    
+    # Try database first
+    if USE_DATABASE:
+        session = await get_db_session()
+        if session:
+            try:
+                # Get scan
+                result = await session.execute(
+                    select(ScanModel).where(ScanModel.id == str(scan_id))
+                )
+                db_scan = result.scalar_one_or_none()
+                
+                if db_scan:
+                    scan = Scan(
+                        id=UUID(db_scan.id),
+                        target_id=UUID(db_scan.target_id),
+                        name=db_scan.name,
+                        scan_type=db_scan.scan_type or "full",
+                    )
+                    
+                    # Get target
+                    target_result = await session.execute(
+                        select(TargetModel).where(TargetModel.id == db_scan.target_id)
+                    )
+                    db_target = target_result.scalar_one_or_none()
+                    
+                    if db_target:
+                        from pydantic import HttpUrl
+                        target = Target(
+                            id=UUID(db_target.id),
+                            name=db_target.name,
+                            url=db_target.url,
+                        )
+                    
+                    # Get findings
+                    findings_result = await session.execute(
+                        select(FindingModel).where(FindingModel.scan_id == str(scan_id))
+                    )
+                    db_findings = findings_result.scalars().all()
+                    
+                    for f in db_findings:
+                        from ..core.models import Severity, VulnerabilityType, Status as ScanStatus
+                        finding = Finding(
+                            id=UUID(f.id),
+                            scan_id=UUID(f.scan_id),
+                            target_id=UUID(f.target_id),
+                            title=f.title,
+                            description=f.description or "",
+                            severity=f.severity,
+                            vuln_type=f.vuln_type,
+                            url=f.url,
+                            method=f.method,
+                            status=f.status,
+                        )
+                        findings.append(finding)
+            except Exception as e:
+                logger.error(f"Failed to fetch report data from database: {e}")
+            finally:
+                await session.close()
+    
+    # Fallback to in-memory storage
+    if scan is None and scan_id in _scans_db:
+        scan = _scans_db[scan_id]
+    
+    if target is None and scan:
+        target = _targets_db.get(scan.target_id)
+    
+    if not findings:
+        findings = [f for f in _findings_db.values() if f.scan_id == scan_id]
+    
+    # Create default target if not found
+    if target is None:
+        target = Target(
+            id=scan.target_id if scan else uuid4(),
+            name="Unknown Target",
+            url="http://unknown",
+        )
+    
+    # Create default scan if not found
+    if scan is None:
+        scan = Scan(
+            id=scan_id,
+            target_id=target.id,
+            name=report.get("name", "Unknown Scan"),
+        )
+    
+    # Get exporter and generate content
+    exporter = ExporterFactory.get_exporter(report_format)
+    if not exporter:
+        raise HTTPException(status_code=400, detail=f"Unsupported format: {report_format}")
+    
+    try:
+        content = exporter.export(findings, scan, target)
+    except Exception as e:
+        logger.error(f"Failed to export report: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate report: {str(e)}")
+    
+    # Determine content type
+    content_types = {
+        "json": "application/json",
+        "html": "text/html",
+        "csv": "text/csv",
+        "xml": "application/xml",
+        "sarif": "application/json",
+        "pdf": "text/html",  # PDF exporter returns HTML
+    }
+    
+    content_type = content_types.get(report_format, "application/octet-stream")
+    
+    # Generate filename
+    filename = f"vulnscope-report-{report_id}.{report_format}"
+    if report_format == "sarif":
+        filename = f"vulnscope-report-{report_id}.sarif.json"
+    
+    # Return file response
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
 
 
 # ============ Policy Endpoints ============
