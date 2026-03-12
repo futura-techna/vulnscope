@@ -53,14 +53,27 @@ git commit -m "Add Render blueprint configuration"
 git push origin main
 ```
 
-### Étape 2: Créer un Blueprint sur Render
+### Étape 2: Connecter Render à GitHub (IMPORTANT pour les repos privés)
+
+⚠️ **Si votre repository est privé**, vous devez autoriser Render à y accéder:
 
 1. Connectez-vous à [Render Dashboard](https://dashboard.render.com)
-2. Cliquez sur **"New"** → **" Blueprint"**
-3. Connectez votre repository GitHub/GitLab
-4. Sélectionnez le repository `vulnscope`
-5. Render détecte automatiquement le fichier `render.yaml`
-6. Cliquez sur **"Apply"**
+2. Allez dans **Account Settings** → **Connected Accounts**
+3. Cliquez sur **Connect GitHub** (ou GitLab)
+4. **IMPORTANT**: Dans les options d'autorisation GitHub:
+   - Soit autorisez **tous les repositories**
+   - Soit sélectionnez uniquement le repository `vulnscope`
+5. Complétez l'autorisation OAuth
+
+### Étape 3: Créer un Blueprint sur Render
+
+1. Connectez-vous à [Render Dashboard](https://dashboard.render.com)
+2. Cliquez sur **"New"** → **"Blueprint"**
+3. Sélectionnez **GitHub** ou **GitLab** comme source
+4. **Si le repository n'apparaît pas**, cliquez sur "Adjust Permissions" ou retournez à l'Étape 2
+5. Sélectionnez le repository `vulnscope`
+6. Render détecte automatiquement le fichier `render.yaml`
+7. Cliquez sur **"Apply"**
 
 ### Étape 3: Attendre le déploiement
 
@@ -267,6 +280,34 @@ Render déploie automatiquement à chaque push sur la branche configurée.
 ---
 
 ## 🔧 Résolution de problèmes
+
+### Erreur: "fatal: could not read Username for 'https://github.com'"
+
+Cette erreur indique que **Render n'a pas accès à votre repository privé**.
+
+**Solution:**
+
+1. Allez sur [Render Dashboard](https://dashboard.render.com)
+2. Cliquez sur votre avatar → **Account Settings**
+3. Allez dans **Connected Accounts**
+4. Trouvez GitHub et cliquez sur **Configure** ou **Reconnect**
+5. Dans GitHub, allez dans **Settings** → **Applications** → **Authorized OAuth Apps**
+6. Trouvez Render et cliquez dessus
+7. Sous "Repository access", sélectionnez:
+   - **All repositories** (recommandé), OU
+   - **Only select repositories** et ajoutez `futura-techna/vulnscope`
+8. Cliquez sur **Save**
+9. Retournez sur Render et relancez le déploiement
+
+**Alternative - Rendre le repository public:**
+```bash
+# Sur GitHub, allez dans Settings → Danger Zone → Change visibility
+# ⚠️ Attention: Le code devient visible publiquement
+```
+
+### Erreur: "invalid local: resolve : lstat /opt/render/project/src"
+
+Cette erreur est une conséquence de l'échec du clone git. Une fois que Render peut accéder au repository, cette erreur disparaîtra.
 
 ### L'API ne démarre pas
 
