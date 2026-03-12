@@ -197,9 +197,15 @@ class Scan(BaseModel):
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     
+    # Progress tracking
+    progress: int = 0
+    error_message: Optional[str] = None
+    
     # Results
     total_endpoints: int = 0
     total_findings: int = 0
+    endpoints_discovered: int = 0
+    findings_count: int = 0
     findings_by_severity: Dict[Severity, int] = Field(default_factory=dict)
     
     # Metadata
