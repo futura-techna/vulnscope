@@ -16,7 +16,20 @@ const customJestConfig = {
     'lib/**/*.{js,jsx,ts,tsx}',
     '!app/**/*.d.ts',
     '!next-env.d.ts',
+    '!**/node_modules/**',
+    '!**/.next/**',
+    '!**/coverage/**',
   ],
+  coverageThreshold: {
+    global: {
+      branches: 70,
+      functions: 70,
+      lines: 70,
+      statements: 70,
+    },
+  },
+  coverageReporters: ['text', 'text-summary', 'lcov', 'clover', 'html'],
+  coverageDirectory: 'coverage',
 }
 
 module.exports = createJestConfig(customJestConfig)

@@ -10,23 +10,22 @@ from datetime import datetime
 import json
 
 from src.api.websocket import (
-    ConnectionManager, ScanProgressHandler,
-    WebSocketMessage, MessageType
+    WebSocketManager, WSMessage, MessageType,
+    ws_manager
 )
 
 
-class TestConnectionManager:
+class TestWebSocketManager:
     """Test WebSocket connection manager"""
     
     def test_init(self):
-        manager = ConnectionManager()
+        manager = WebSocketManager()
         
-        assert manager.active_connections == []
-        assert manager.scan_subscriptions == {}
+        assert manager.active_connections == set()
     
     @pytest.mark.asyncio
     async def test_connect(self):
-        manager = ConnectionManager()
+        manager = WebSocketManager()
         mock_websocket = AsyncMock()
         
         await manager.connect(mock_websocket)
@@ -36,7 +35,7 @@ class TestConnectionManager:
     
     @pytest.mark.asyncio
     async def test_disconnect(self):
-        manager = ConnectionManager()
+        manager = WebSocketManager()
         mock_websocket = AsyncMock()
         
         await manager.connect(mock_websocket)
@@ -45,192 +44,186 @@ class TestConnectionManager:
         assert mock_websocket not in manager.active_connections
     
     @pytest.mark.asyncio
-    async def test_send_personal_message(self):
-        manager = ConnectionManager()
-        mock_websocket = AsyncMock()
-        
-        await manager.connect(mock_websocket)
-        await manager.send_personal_message({"type": "test"}, mock_websocket)
-        
-        mock_websocket.send_json.assert_called_once_with({"type": "test"})
-    
-    @pytest.mark.asyncio
     async def test_broadcast(self):
-        manager = ConnectionManager()
+        manager = WebSocketManager()
         mock_ws1 = AsyncMock()
         mock_ws2 = AsyncMock()
         
         await manager.connect(mock_ws1)
         await manager.connect(mock_ws2)
         
-        await manager.broadcast({"type": "broadcast"})
+        message = WSMessage(
+            type=MessageType.SCAN_PROGRESS.value,
+            data={"progress": 50},
+            timestamp=datetime.utcnow()
+        )
         
-        mock_ws1.send_json.assert_called_once_with({"type": "broadcast"})
-        mock_ws2.send_json.assert_called_once_with({"type": "broadcast"})
+        await manager.broadcast(message)
+        
+        mock_ws1.send_text.assert_called_once()
+        mock_ws2.send_text.assert_called_once()
     
     @pytest.mark.asyncio
-    async def test_subscribe_to_scan(self):
-        manager = ConnectionManager()
-        mock_websocket = AsyncMock()
-        
-        await manager.connect(mock_websocket)
-        manager.subscribe_to_scan(mock_websocket, "scan-123")
-        
-        assert "scan-123" in manager.scan_subscriptions
-        assert mock_websocket in manager.scan_subscriptions["scan-123"]
-    
-    @pytest.mark.asyncio
-    async def test_unsubscribe_from_scan(self):
-        manager = ConnectionManager()
-        mock_websocket = AsyncMock()
-        
-        await manager.connect(mock_websocket)
-        manager.subscribe_to_scan(mock_websocket, "scan-123")
-        manager.unsubscribe_from_scan(mock_websocket, "scan-123")
-        
-        assert mock_websocket not in manager.scan_subscriptions.get("scan-123", [])
-    
-    @pytest.mark.asyncio
-    async def test_broadcast_to_scan_subscribers(self):
-        manager = ConnectionManager()
+    async def test_broadcast_removes_disconnected(self):
+        manager = WebSocketManager()
         mock_ws1 = AsyncMock()
         mock_ws2 = AsyncMock()
+        
+        # Make ws2 throw an exception when sending
+        mock_ws2.send_text.side_effect = Exception("Connection lost")
         
         await manager.connect(mock_ws1)
         await manager.connect(mock_ws2)
         
-        manager.subscribe_to_scan(mock_ws1, "scan-123")
-        manager.subscribe_to_scan(mock_ws2, "scan-456")
+        message = WSMessage(
+            type=MessageType.SCAN_PROGRESS.value,
+            data={"progress": 50},
+            timestamp=datetime.utcnow()
+        )
         
-        await manager.broadcast_to_scan("scan-123", {"type": "progress"})
+        await manager.broadcast(message)
         
-        mock_ws1.send_json.assert_called_once_with({"type": "progress"})
-        mock_ws2.send_json.assert_not_called()
+        # ws2 should be removed due to error
+        assert mock_ws2 not in manager.active_connections
+        assert mock_ws1 in manager.active_connections
 
 
-class TestScanProgressHandler:
-    """Test scan progress handler"""
+class TestWSMessage:
+    """Test WSMessage dataclass"""
     
-    def test_init(self):
-        handler = ScanProgressHandler()
-        
-        assert handler.scans == {}
-    
-    def test_start_scan(self):
-        handler = ScanProgressHandler()
-        
-        handler.start_scan("scan-123", "target-1")
-        
-        assert "scan-123" in handler.scans
-        assert handler.scans["scan-123"]["target_id"] == "target-1"
-        assert handler.scans["scan-123"]["status"] == "running"
-        assert handler.scans["scan-123"]["progress"] == 0
-    
-    def test_update_progress(self):
-        handler = ScanProgressHandler()
-        handler.start_scan("scan-123", "target-1")
-        
-        handler.update_progress("scan-123", 50, "Scanning endpoints")
-        
-        assert handler.scans["scan-123"]["progress"] == 50
-        assert handler.scans["scan-123"]["message"] == "Scanning endpoints"
-    
-    def test_complete_scan(self):
-        handler = ScanProgressHandler()
-        handler.start_scan("scan-123", "target-1")
-        
-        handler.complete_scan("scan-123", findings_count=10)
-        
-        assert handler.scans["scan-123"]["status"] == "completed"
-        assert handler.scans["scan-123"]["progress"] == 100
-        assert handler.scans["scan-123"]["findings_count"] == 10
-    
-    def test_fail_scan(self):
-        handler = ScanProgressHandler()
-        handler.start_scan("scan-123", "target-1")
-        
-        handler.fail_scan("scan-123", "Connection timeout")
-        
-        assert handler.scans["scan-123"]["status"] == "failed"
-        assert handler.scans["scan-123"]["error"] == "Connection timeout"
-    
-    def test_get_scan_status(self):
-        handler = ScanProgressHandler()
-        handler.start_scan("scan-123", "target-1")
-        
-        status = handler.get_scan_status("scan-123")
-        
-        assert status["scan_id"] == "scan-123"
-        assert status["status"] == "running"
-    
-    def test_get_nonexistent_scan_status(self):
-        handler = ScanProgressHandler()
-        
-        status = handler.get_scan_status("nonexistent")
-        
-        assert status is None
-
-
-class TestWebSocketMessage:
-    """Test WebSocket message models"""
-    
-    def test_create_progress_message(self):
-        msg = WebSocketMessage(
-            type=MessageType.PROGRESS,
-            data={"progress": 50, "message": "Scanning"}
+    def test_create_message(self):
+        msg = WSMessage(
+            type=MessageType.SCAN_STARTED.value,
+            data={"scan_id": "123"},
+            timestamp=datetime.utcnow()
         )
         
-        assert msg.type == MessageType.PROGRESS
-        assert msg.data["progress"] == 50
-    
-    def test_create_finding_message(self):
-        msg = WebSocketMessage(
-            type=MessageType.FINDING,
-            data={"id": "finding-1", "severity": "High"}
-        )
-        
-        assert msg.type == MessageType.FINDING
-        assert msg.data["id"] == "finding-1"
-    
-    def test_create_complete_message(self):
-        msg = WebSocketMessage(
-            type=MessageType.COMPLETE,
-            data={"findings_count": 5}
-        )
-        
-        assert msg.type == MessageType.COMPLETE
-        assert msg.data["findings_count"] == 5
-    
-    def test_create_error_message(self):
-        msg = WebSocketMessage(
-            type=MessageType.ERROR,
-            data={"error": "Something went wrong"}
-        )
-        
-        assert msg.type == MessageType.ERROR
-        assert msg.data["error"] == "Something went wrong"
-    
-    def test_to_json(self):
-        msg = WebSocketMessage(
-            type=MessageType.PROGRESS,
-            data={"progress": 50}
-        )
-        
-        json_str = msg.to_json()
-        
-        assert '"type": "progress"' in json_str
-        assert '"progress": 50' in json_str
+        assert msg.type == MessageType.SCAN_STARTED.value
+        assert msg.data["scan_id"] == "123"
+        assert isinstance(msg.timestamp, datetime)
 
 
 class TestMessageType:
     """Test message type enum"""
     
     def test_message_types(self):
-        assert MessageType.PROGRESS == "progress"
-        assert MessageType.FINDING == "finding"
-        assert MessageType.COMPLETE == "complete"
-        assert MessageType.ERROR == "error"
-        assert MessageType.CANCELLED == "cancelled"
+        assert MessageType.SCAN_STARTED == "scan_started"
+        assert MessageType.SCAN_PROGRESS == "scan_progress"
+        assert MessageType.SCAN_COMPLETED == "scan_completed"
+        assert MessageType.SCAN_ERROR == "scan_error"
+        assert MessageType.FINDING_DISCOVERED == "finding_discovered"
+        assert MessageType.ENDPOINT_DISCOVERED == "endpoint_discovered"
+
+
+class TestWebSocketManagerMethods:
+    """Test WebSocket manager message methods"""
+    
+    @pytest.mark.asyncio
+    async def test_send_scan_started(self):
+        manager = WebSocketManager()
+        mock_websocket = AsyncMock()
+        
+        await manager.connect(mock_websocket)
+        await manager.send_scan_started("scan-123", "Test Target")
+        
+        mock_websocket.send_text.assert_called_once()
+        call_args = mock_websocket.send_text.call_args[0][0]
+        data = json.loads(call_args)
+        
+        assert data["type"] == "scan_started"
+        assert data["data"]["scan_id"] == "scan-123"
+        assert data["data"]["target"] == "Test Target"
+    
+    @pytest.mark.asyncio
+    async def test_send_scan_progress(self):
+        manager = WebSocketManager()
+        mock_websocket = AsyncMock()
+        
+        await manager.connect(mock_websocket)
+        await manager.send_scan_progress("scan-123", 50, 10, 2)
+        
+        mock_websocket.send_text.assert_called_once()
+        call_args = mock_websocket.send_text.call_args[0][0]
+        data = json.loads(call_args)
+        
+        assert data["type"] == "scan_progress"
+        assert data["data"]["progress"] == 50
+        assert data["data"]["endpoints_discovered"] == 10
+        assert data["data"]["findings_count"] == 2
+    
+    @pytest.mark.asyncio
+    async def test_send_scan_completed(self):
+        manager = WebSocketManager()
+        mock_websocket = AsyncMock()
+        
+        await manager.connect(mock_websocket)
+        await manager.send_scan_completed("scan-123", 5, 30.5)
+        
+        mock_websocket.send_text.assert_called_once()
+        call_args = mock_websocket.send_text.call_args[0][0]
+        data = json.loads(call_args)
+        
+        assert data["type"] == "scan_completed"
+        assert data["data"]["total_findings"] == 5
+        assert data["data"]["duration_seconds"] == 30.5
+    
+    @pytest.mark.asyncio
+    async def test_send_finding(self):
+        manager = WebSocketManager()
+        mock_websocket = AsyncMock()
+        
+        await manager.connect(mock_websocket)
+        finding = {"id": "finding-1", "severity": "High", "title": "XSS"}
+        await manager.send_finding("scan-123", finding)
+        
+        mock_websocket.send_text.assert_called_once()
+        call_args = mock_websocket.send_text.call_args[0][0]
+        data = json.loads(call_args)
+        
+        assert data["type"] == "finding_discovered"
+        assert data["data"]["scan_id"] == "scan-123"
+        assert data["data"]["finding"]["id"] == "finding-1"
+    
+    @pytest.mark.asyncio
+    async def test_send_endpoint(self):
+        manager = WebSocketManager()
+        mock_websocket = AsyncMock()
+        
+        await manager.connect(mock_websocket)
+        endpoint = {"url": "http://example.com/api", "method": "GET"}
+        await manager.send_endpoint("scan-123", endpoint)
+        
+        mock_websocket.send_text.assert_called_once()
+        call_args = mock_websocket.send_text.call_args[0][0]
+        data = json.loads(call_args)
+        
+        assert data["type"] == "endpoint_discovered"
+        assert data["data"]["scan_id"] == "scan-123"
+        assert data["data"]["endpoint"]["url"] == "http://example.com/api"
+    
+    @pytest.mark.asyncio
+    async def test_send_error(self):
+        manager = WebSocketManager()
+        mock_websocket = AsyncMock()
+        
+        await manager.connect(mock_websocket)
+        await manager.send_error("scan-123", "Connection timeout")
+        
+        mock_websocket.send_text.assert_called_once()
+        call_args = mock_websocket.send_text.call_args[0][0]
+        data = json.loads(call_args)
+        
+        assert data["type"] == "scan_error"
+        assert data["data"]["scan_id"] == "scan-123"
+        assert data["data"]["error"] == "Connection timeout"
+
+
+class TestGlobalWSManager:
+    """Test global WebSocket manager instance"""
+    
+    def test_global_manager_exists(self):
+        assert ws_manager is not None
+        assert isinstance(ws_manager, WebSocketManager)
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ GraphQL API for VulnScope
 
 from typing import List, Optional
 from datetime import datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 import strawberry
 
 
@@ -117,7 +117,7 @@ class Query:
         )
 
 
-@strawberry.type
+@strawberry.input
 class CreateTargetInput:
     name: str
     url: str
@@ -125,7 +125,7 @@ class CreateTargetInput:
     tags: List[str] = strawberry.field(default_factory=list)
 
 
-@strawberry.type
+@strawberry.input
 class CreateScanInput:
     target_id: UUID
     name: str
@@ -141,7 +141,7 @@ class Mutation:
         """Create a new target"""
         # In production, save to database
         return Target(
-            id=UUID(),
+            id=uuid4(),
             name=input.name,
             url=input.url,
             description=input.description,
@@ -154,7 +154,7 @@ class Mutation:
         """Create and start a new scan"""
         # In production, save to database and start scan
         return Scan(
-            id=UUID(),
+            id=uuid4(),
             target_id=input.target_id,
             name=input.name,
             status="RUNNING",

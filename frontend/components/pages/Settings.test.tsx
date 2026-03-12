@@ -111,8 +111,9 @@ describe('Settings', () => {
     
     render(<Settings />, { wrapper: createWrapper() })
     
-    // Settings page should render even during loading
-    expect(screen.getByText('Settings')).toBeInTheDocument()
+    // During loading, a spinner should be shown instead of the settings content
+    const spinner = document.querySelector('.animate-spin')
+    expect(spinner).toBeInTheDocument()
   })
 
   it('populates form with settings data', async () => {

@@ -4,12 +4,12 @@ Tests for S3-compatible storage integration
 """
 
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
-import io
+from unittest.mock import Mock, patch, MagicMock
+import json
 from datetime import datetime
 
 from src.evidence.s3_storage import (
-    S3StorageClient, S3Config, StorageError
+    S3EvidenceStorage, S3Config, DigitalSignature, EvidenceSigner
 )
 
 
@@ -19,195 +19,214 @@ class TestS3Config:
     def test_default_config(self):
         config = S3Config()
         
-        assert config.endpoint_url is not None
-        assert config.bucket_name is not None
+        assert config.bucket == ""
         assert config.region == "us-east-1"
+        assert config.encryption_enabled is True
+        assert config.versioning is True
     
     def test_custom_config(self):
         config = S3Config(
-            endpoint_url="https://s3.custom.com",
-            bucket_name="custom-bucket",
+            bucket="custom-bucket",
             region="eu-west-1",
             access_key="custom-key",
-            secret_key="custom-secret"
+            secret_key="custom-secret",
+            endpoint_url="https://s3.custom.com"
         )
         
-        assert config.endpoint_url == "https://s3.custom.com"
-        assert config.bucket_name == "custom-bucket"
+        assert config.bucket == "custom-bucket"
         assert config.region == "eu-west-1"
+        assert config.access_key == "custom-key"
+        assert config.endpoint_url == "https://s3.custom.com"
 
 
-class TestS3StorageClient:
-    """Test S3 storage client"""
+class TestDigitalSignature:
+    """Test digital signature functionality"""
     
-    @pytest.fixture
-    def mock_s3_client(self):
-        with patch('src.evidence.s3_storage.boto3.client') as mock:
-            yield mock
+    def test_sign(self):
+        signer = DigitalSignature("test-secret-key")
+        
+        signature = signer.sign("test data")
+        
+        assert signature is not None
+        assert len(signature) == 64  # SHA256 hex digest
     
-    @pytest.fixture
-    def storage_client(self, mock_s3_client):
-        config = S3Config(
-            endpoint_url="http://localhost:9000",
-            bucket_name="test-bucket"
-        )
-        return S3StorageClient(config)
-    
-    def test_init(self, storage_client):
-        assert storage_client.config.bucket_name == "test-bucket"
-    
-    def test_upload_file(self, storage_client, mock_s3_client):
-        mock_s3_instance = mock_s3_client.return_value
-        mock_s3_instance.upload_fileobj.return_value = None
+    def test_verify_valid(self):
+        signer = DigitalSignature("test-secret-key")
         
-        file_data = io.BytesIO(b"test content")
-        result = storage_client.upload_file(
-            file_data,
-            key="reports/test-report.pdf",
-            content_type="application/pdf"
-        )
+        data = "test data"
+        signature = signer.sign(data)
         
-        assert result is not None
-        mock_s3_instance.upload_fileobj.assert_called_once()
-    
-    def test_upload_file_with_metadata(self, storage_client, mock_s3_client):
-        mock_s3_instance = mock_s3_client.return_value
-        mock_s3_instance.upload_fileobj.return_value = None
-        
-        file_data = io.BytesIO(b"test content")
-        result = storage_client.upload_file(
-            file_data,
-            key="reports/test-report.pdf",
-            content_type="application/pdf",
-            metadata={"scan_id": "scan-123", "created_by": "user-1"}
-        )
-        
-        assert result is not None
-    
-    def test_download_file(self, storage_client, mock_s3_client):
-        mock_s3_instance = mock_s3_client.return_value
-        mock_body = Mock()
-        mock_body.read.return_value = b"file content"
-        mock_s3_instance.get_object.return_value = {
-            "Body": mock_body,
-            "ContentType": "application/pdf"
-        }
-        
-        result = storage_client.download_file("reports/test-report.pdf")
-        
-        assert result is not None
-        mock_s3_instance.get_object.assert_called_once()
-    
-    def test_download_nonexistent_file(self, storage_client, mock_s3_client):
-        mock_s3_instance = mock_s3_client.return_value
-        mock_s3_instance.get_object.side_effect = Exception("NoSuchKey")
-        
-        with pytest.raises(StorageError):
-            storage_client.download_file("nonexistent-file.pdf")
-    
-    def test_delete_file(self, storage_client, mock_s3_client):
-        mock_s3_instance = mock_s3_client.return_value
-        mock_s3_instance.delete_object.return_value = {}
-        
-        result = storage_client.delete_file("reports/test-report.pdf")
-        
-        assert result is True
-        mock_s3_instance.delete_object.assert_called_once()
-    
-    def test_list_files(self, storage_client, mock_s3_client):
-        mock_s3_instance = mock_s3_client.return_value
-        mock_s3_instance.list_objects_v2.return_value = {
-            "Contents": [
-                {"Key": "reports/report1.pdf", "Size": 1024},
-                {"Key": "reports/report2.pdf", "Size": 2048}
-            ]
-        }
-        
-        result = storage_client.list_files(prefix="reports/")
-        
-        assert len(result) == 2
-        assert result[0]["Key"] == "reports/report1.pdf"
-    
-    def test_list_empty_bucket(self, storage_client, mock_s3_client):
-        mock_s3_instance = mock_s3_client.return_value
-        mock_s3_instance.list_objects_v2.return_value = {}
-        
-        result = storage_client.list_files(prefix="reports/")
-        
-        assert result == []
-    
-    def test_generate_presigned_url(self, storage_client, mock_s3_client):
-        mock_s3_instance = mock_s3_client.return_value
-        mock_s3_instance.generate_presigned_url.return_value = (
-            "https://s3.example.com/signed-url"
-        )
-        
-        result = storage_client.generate_presigned_url(
-            "reports/test-report.pdf",
-            expiration=3600
-        )
-        
-        assert result.startswith("https://")
-        mock_s3_instance.generate_presigned_url.assert_called_once()
-    
-    def test_file_exists_true(self, storage_client, mock_s3_client):
-        mock_s3_instance = mock_s3_client.return_value
-        mock_s3_instance.head_object.return_value = {"ContentLength": 1024}
-        
-        result = storage_client.file_exists("reports/test-report.pdf")
+        result = signer.verify(data, signature)
         
         assert result is True
     
-    def test_file_exists_false(self, storage_client, mock_s3_client):
-        mock_s3_instance = mock_s3_client.return_value
-        mock_s3_instance.head_object.side_effect = Exception("NotFound")
+    def test_verify_invalid(self):
+        signer = DigitalSignature("test-secret-key")
         
-        result = storage_client.file_exists("nonexistent.pdf")
+        result = signer.verify("test data", "invalid-signature")
         
         assert result is False
     
-    def test_get_file_metadata(self, storage_client, mock_s3_client):
-        mock_s3_instance = mock_s3_client.return_value
-        mock_s3_instance.head_object.return_value = {
-            "ContentLength": 1024,
-            "ContentType": "application/pdf",
-            "LastModified": datetime.utcnow(),
-            "Metadata": {"scan_id": "scan-123"}
+    def test_verify_tampered_data(self):
+        signer = DigitalSignature("test-secret-key")
+        
+        signature = signer.sign("original data")
+        result = signer.verify("tampered data", signature)
+        
+        assert result is False
+    
+    def test_different_keys(self):
+        signer1 = DigitalSignature("key1")
+        signer2 = DigitalSignature("key2")
+        
+        signature = signer1.sign("test data")
+        result = signer2.verify("test data", signature)
+        
+        assert result is False
+
+
+class TestS3EvidenceStorage:
+    """Test S3 evidence storage"""
+    
+    @pytest.fixture
+    def storage(self):
+        config = S3Config(
+            bucket="test-bucket",
+            region="us-east-1",
+            secret_key="test-secret"
+        )
+        return S3EvidenceStorage(config)
+    
+    def test_init(self, storage):
+        assert storage.config.bucket == "test-bucket"
+        assert storage.signature is not None
+    
+    def test_upload_evidence_mock(self, storage):
+        """Test uploading evidence without boto3"""
+        # Without boto3, the upload is mocked
+        result = storage.upload_evidence(
+            evidence_id="ev-001",
+            content="Test evidence content",
+            metadata={"scan_id": "scan-123"}
+        )
+        
+        assert result['evidence_id'] == "ev-001"
+        assert result['uploaded'] is True
+        assert result['signature'] is not None
+        assert result['content_hash'] is not None
+    
+    def test_upload_evidence_with_signature(self, storage):
+        """Test that uploaded evidence has valid signature"""
+        content = "Test evidence content"
+        result = storage.upload_evidence(
+            evidence_id="ev-002",
+            content=content
+        )
+        
+        # Verify signature is valid
+        assert storage.signature.verify(content, result['signature'])
+    
+    def test_verify_evidence(self, storage):
+        """Test evidence verification"""
+        # Without boto3, download returns None
+        result = storage.verify_evidence("ev-001")
+        
+        # Should return False or None since no actual S3
+        assert result is None or result is False
+    
+    def test_delete_evidence_mock(self, storage):
+        """Test deleting evidence without boto3"""
+        result = storage.delete_evidence("ev-001")
+        
+        # Without boto3, returns True (mock)
+        assert result is True
+    
+    def test_list_evidence_mock(self, storage):
+        """Test listing evidence without boto3"""
+        result = storage.list_evidence()
+        
+        # Without boto3, returns empty list
+        assert result == []
+
+
+class TestEvidenceSigner:
+    """Test evidence signer"""
+    
+    @pytest.fixture
+    def signer(self):
+        return EvidenceSigner("test-secret-key")
+    
+    def test_sign_finding(self, signer):
+        finding = {
+            "id": "finding-001",
+            "title": "SQL Injection",
+            "severity": "High"
         }
         
-        result = storage_client.get_file_metadata("reports/test-report.pdf")
+        signed = signer.sign_finding(finding)
         
-        assert result["ContentLength"] == 1024
-        assert result["Metadata"]["scan_id"] == "scan-123"
+        assert "signature" in signed
+        assert "signed_at" in signed
     
-    def test_copy_file(self, storage_client, mock_s3_client):
-        mock_s3_instance = mock_s3_client.return_value
-        mock_s3_instance.copy_object.return_value = {}
+    def test_verify_finding_valid(self, signer):
+        finding = {
+            "id": "finding-001",
+            "title": "SQL Injection",
+            "severity": "High"
+        }
         
-        result = storage_client.copy_file(
-            "reports/source.pdf",
-            "reports/destination.pdf"
-        )
+        signed = signer.sign_finding(finding.copy())
+        result = signer.verify_finding(signed)
         
         assert result is True
-        mock_s3_instance.copy_object.assert_called_once()
-
-
-class TestStorageError:
-    """Test storage error handling"""
     
-    def test_storage_error_message(self):
-        error = StorageError("Failed to upload file")
+    def test_verify_finding_tampered(self, signer):
+        finding = {
+            "id": "finding-001",
+            "title": "SQL Injection",
+            "severity": "High"
+        }
         
-        assert "Failed to upload file" in str(error)
+        signed = signer.sign_finding(finding.copy())
+        
+        # Tamper with the finding
+        signed["title"] = "XSS"
+        
+        result = signer.verify_finding(signed)
+        
+        assert result is False
     
-    def test_storage_error_with_details(self):
-        error = StorageError(
-            "Upload failed",
-            details={"key": "test.pdf", "reason": "Access denied"}
+    def test_verify_finding_missing_signature(self, signer):
+        finding = {
+            "id": "finding-001",
+            "title": "SQL Injection"
+        }
+        
+        result = signer.verify_finding(finding)
+        
+        assert result is False
+
+
+class TestS3EvidenceStorageWithBoto3:
+    """Test S3 storage with boto3 mocked"""
+    
+    def test_download_evidence_with_boto3_mock(self):
+        """Test downloading evidence with boto3 mocked"""
+        # Since boto3 is imported inside methods, we test the mock behavior
+        config = S3Config(
+            bucket="test-bucket",
+            region="us-east-1",
+            access_key="key",
+            secret_key="secret"
         )
         
-        assert error.details["key"] == "test.pdf"
+        storage = S3EvidenceStorage(config)
+        
+        # Without boto3 installed, download returns None
+        result = storage.download_evidence("ev-001")
+        
+        # Should return None when boto3 is not available
+        assert result is None
 
 
 if __name__ == "__main__":

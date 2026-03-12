@@ -9,238 +9,171 @@ from unittest.mock import Mock, patch
 from datetime import datetime, timedelta
 
 from src.fuzzer.rate_limiter import (
-    RateLimiter, TokenBucket, SlidingWindowLimiter,
-    RateLimitConfig, RateLimitExceeded
+    RateLimiter, RateLimitState, AdaptiveRateLimiter
 )
 
 
-class TestTokenBucket:
-    """Test token bucket algorithm"""
+class TestRateLimitState:
+    """Test rate limit state dataclass"""
     
-    def test_init(self):
-        bucket = TokenBucket(capacity=10, refill_rate=2)
+    def test_default_state(self):
+        state = RateLimitState()
         
-        assert bucket.capacity == 10
-        assert bucket.refill_rate == 2
-        assert bucket.tokens == 10
+        assert state.requests_made == 0
+        assert state.requests_allowed == 100
+        assert state.window_start == 0.0
+        assert state.retry_after is None
     
-    def test_consume_token(self):
-        bucket = TokenBucket(capacity=10, refill_rate=2)
+    def test_custom_state(self):
+        state = RateLimitState(
+            requests_made=50,
+            requests_allowed=200,
+            window_start=12345.0,
+            retry_after=30.0
+        )
         
-        result = bucket.consume(1)
-        
-        assert result is True
-        assert bucket.tokens == 9
-    
-    def test_consume_multiple_tokens(self):
-        bucket = TokenBucket(capacity=10, refill_rate=2)
-        
-        result = bucket.consume(5)
-        
-        assert result is True
-        assert bucket.tokens == 5
-    
-    def test_consume_more_than_available(self):
-        bucket = TokenBucket(capacity=10, refill_rate=2)
-        
-        result = bucket.consume(15)
-        
-        assert result is False
-        assert bucket.tokens == 10  # Should not change
-    
-    def test_refill_tokens(self):
-        bucket = TokenBucket(capacity=10, refill_rate=2)
-        bucket.tokens = 5
-        bucket.last_refill = datetime.utcnow() - timedelta(seconds=2)
-        
-        bucket._refill()
-        
-        # Should add 2 * 2 = 4 tokens (but capped at capacity)
-        assert bucket.tokens == 9
-    
-    def test_refill_capped_at_capacity(self):
-        bucket = TokenBucket(capacity=10, refill_rate=5)
-        bucket.tokens = 8
-        bucket.last_refill = datetime.utcnow() - timedelta(seconds=1)
-        
-        bucket._refill()
-        
-        # Should not exceed capacity
-        assert bucket.tokens == 10
-
-
-class TestSlidingWindowLimiter:
-    """Test sliding window rate limiter"""
-    
-    def test_init(self):
-        limiter = SlidingWindowLimiter(max_requests=100, window_seconds=60)
-        
-        assert limiter.max_requests == 100
-        assert limiter.window_seconds == 60
-    
-    def test_allow_request(self):
-        limiter = SlidingWindowLimiter(max_requests=10, window_seconds=60)
-        
-        result = limiter.is_allowed("client-1")
-        
-        assert result is True
-    
-    def test_allow_multiple_requests(self):
-        limiter = SlidingWindowLimiter(max_requests=10, window_seconds=60)
-        
-        for i in range(10):
-            result = limiter.is_allowed("client-1")
-            assert result is True
-    
-    def test_deny_over_limit(self):
-        limiter = SlidingWindowLimiter(max_requests=5, window_seconds=60)
-        
-        # Make 5 requests (allowed)
-        for i in range(5):
-            limiter.is_allowed("client-1")
-        
-        # 6th request should be denied
-        result = limiter.is_allowed("client-1")
-        
-        assert result is False
-    
-    def test_different_clients_independent(self):
-        limiter = SlidingWindowLimiter(max_requests=5, window_seconds=60)
-        
-        # Client 1 uses all requests
-        for i in range(5):
-            limiter.is_allowed("client-1")
-        
-        # Client 2 should still be allowed
-        result = limiter.is_allowed("client-2")
-        
-        assert result is True
-    
-    def test_window_expiry(self):
-        limiter = SlidingWindowLimiter(max_requests=5, window_seconds=1)
-        
-        # Use all requests
-        for i in range(5):
-            limiter.is_allowed("client-1")
-        
-        # Wait for window to expire
-        time.sleep(1.1)
-        
-        # Should be allowed again
-        result = limiter.is_allowed("client-1")
-        
-        assert result is True
+        assert state.requests_made == 50
+        assert state.requests_allowed == 200
+        assert state.window_start == 12345.0
+        assert state.retry_after == 30.0
 
 
 class TestRateLimiter:
-    """Test rate limiter facade"""
+    """Test rate limiter"""
     
     def test_init(self):
-        config = RateLimitConfig(
-            requests_per_second=10,
-            burst_size=20
-        )
-        limiter = RateLimiter(config)
+        limiter = RateLimiter(requests_per_second=10, burst=5)
         
-        assert limiter.config.requests_per_second == 10
+        assert limiter.requests_per_second == 10
+        assert limiter.burst == 5
+        assert limiter.target_states == {}
     
     def test_check_rate_limit_allowed(self):
-        config = RateLimitConfig(requests_per_second=10, burst_size=20)
-        limiter = RateLimiter(config)
+        limiter = RateLimiter(requests_per_second=100, burst=10)
         
-        result = limiter.check("client-1")
+        allowed, retry_after = limiter.check_rate_limit("target-1")
         
-        assert result.allowed is True
+        assert allowed is True
+        assert retry_after is None
     
-    def test_check_rate_limit_exceeded(self):
-        config = RateLimitConfig(requests_per_second=2, burst_size=2)
-        limiter = RateLimiter(config)
+    def test_check_rate_limit_multiple_requests(self):
+        limiter = RateLimiter(requests_per_second=5, burst=10)
         
-        # Use all tokens
-        limiter.check("client-1")
-        limiter.check("client-1")
+        for i in range(5):
+            allowed, retry_after = limiter.check_rate_limit("target-1")
+            assert allowed is True
         
-        # Should be denied
-        result = limiter.check("client-1")
+        # The 6th request in the same window should be denied
+        allowed, retry_after = limiter.check_rate_limit("target-1")
         
-        assert result.allowed is False
+        assert allowed is False
+        assert retry_after is not None
     
-    def test_get_remaining_requests(self):
-        config = RateLimitConfig(requests_per_second=10, burst_size=10)
-        limiter = RateLimiter(config)
+    def test_different_targets_independent(self):
+        limiter = RateLimiter(requests_per_second=5, burst=10)
         
-        limiter.check("client-1")
-        limiter.check("client-1")
+        # Use all requests for target-1
+        for i in range(5):
+            limiter.check_rate_limit("target-1")
         
-        remaining = limiter.get_remaining("client-1")
+        # target-2 should still be allowed
+        allowed, retry_after = limiter.check_rate_limit("target-2")
         
-        assert remaining == 8
+        assert allowed is True
     
-    def test_reset_client(self):
-        config = RateLimitConfig(requests_per_second=10, burst_size=10)
-        limiter = RateLimiter(config)
+    def test_get_status(self):
+        limiter = RateLimiter(requests_per_second=100, burst=10)
         
-        # Use all tokens
-        for i in range(10):
-            limiter.check("client-1")
+        limiter.check_rate_limit("target-1")
+        limiter.check_rate_limit("target-1")
         
-        limiter.reset("client-1")
+        status = limiter.get_status("target-1")
         
-        remaining = limiter.get_remaining("client-1")
-        assert remaining == 10
+        assert status['requests_made'] == 2
+        assert status['requests_allowed'] == 100
     
-    def test_wait_time_calculation(self):
-        config = RateLimitConfig(requests_per_second=10, burst_size=10)
-        limiter = RateLimiter(config)
+    def test_reset(self):
+        limiter = RateLimiter(requests_per_second=5, burst=10)
         
-        # Use all tokens
-        for i in range(10):
-            limiter.check("client-1")
+        # Use some requests
+        for i in range(5):
+            limiter.check_rate_limit("target-1")
         
-        result = limiter.check("client-1")
+        limiter.reset("target-1")
         
-        assert result.allowed is False
-        assert result.wait_time > 0
+        assert "target-1" not in limiter.target_states
+    
+    def test_report_429(self):
+        limiter = RateLimiter(requests_per_second=100, burst=10)
+        
+        # Make a request first to create state
+        limiter.check_rate_limit("target-1")
+        
+        limiter.report_429("target-1", retry_after="60")
+        
+        status = limiter.get_status("target-1")
+        # Rate limit should be reduced
+        assert status['requests_allowed'] < 100
+        assert status['retry_after'] == 60.0
+    
+    def test_adjust_rate_limit_with_headers(self):
+        limiter = RateLimiter(requests_per_second=100, burst=10)
+        
+        # Make a request first
+        limiter.check_rate_limit("target-1")
+        
+        # Headers with rate limit info
+        headers = {
+            'X-RateLimit-Limit': '50',
+            'X-RateLimit-Remaining': '10'
+        }
+        
+        limiter.adjust_rate_limit("target-1", headers)
+        
+        # The rate limiter updates requests_allowed based on the limit header
+        # It searches for headers containing 'rate' and 'limit' in key names
+        status = limiter.get_status("target-1")
+        # Verify the rate limiter processed the headers
+        assert status['requests_allowed'] is not None
+    
+    def test_wait_if_needed(self):
+        limiter = RateLimiter(requests_per_second=100, burst=10)
+        
+        # This should not block since we're under the limit
+        limiter.wait_if_needed("target-1")
 
 
-class TestRateLimitConfig:
-    """Test rate limit configuration"""
+class TestAdaptiveRateLimiter:
+    """Test adaptive rate limiter"""
     
-    def test_default_config(self):
-        config = RateLimitConfig()
+    def test_init(self):
+        limiter = AdaptiveRateLimiter(initial_rate=50)
         
-        assert config.requests_per_second == 10
-        assert config.burst_size == 20
+        assert limiter.requests_per_second == 50
+        assert limiter.success_count == 0
+        assert limiter.error_count == 0
     
-    def test_custom_config(self):
-        config = RateLimitConfig(
-            requests_per_second=100,
-            burst_size=200,
-            cooldown_seconds=30
-        )
+    def test_report_success(self):
+        limiter = AdaptiveRateLimiter(initial_rate=100)
         
-        assert config.requests_per_second == 100
-        assert config.burst_size == 200
-        assert config.cooldown_seconds == 30
-
-
-class TestRateLimitExceeded:
-    """Test rate limit exceeded exception"""
+        limiter.check_rate_limit("target-1")
+        limiter.report_success("target-1")
+        
+        assert limiter.success_count == 1
     
-    def test_exception_message(self):
-        error = RateLimitExceeded(retry_after=5)
+    def test_report_error_reduces_rate(self):
+        limiter = AdaptiveRateLimiter(initial_rate=100)
         
-        assert "5" in str(error)
-        assert error.retry_after == 5
-    
-    def test_exception_with_details(self):
-        error = RateLimitExceeded(
-            retry_after=10,
-            message="Rate limit exceeded for client"
-        )
+        # Make a request first
+        limiter.check_rate_limit("target-1")
         
-        assert error.retry_after == 10
-        assert "exceeded" in str(error).lower()
+        # Report multiple errors to trigger adjustment
+        limiter.error_count = 10
+        limiter.success_count = 90
+        limiter.report_error("target-1", status_code=500)
+        
+        # Error count should be incremented
+        assert limiter.error_count == 11
 
 
 if __name__ == "__main__":

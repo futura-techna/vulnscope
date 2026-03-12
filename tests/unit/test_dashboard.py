@@ -1,11 +1,17 @@
 """
 VulnScope - Dashboard Tests
-Unit tests for Streamlit dashboard functionality
+Unit tests for dashboard functionality
 """
 
 import pytest
-import pandas as pd
 from datetime import datetime
+
+# Make pandas optional
+try:
+    import pandas as pd
+    HAS_PANDAS = True
+except ImportError:
+    HAS_PANDAS = False
 
 
 # Test data
@@ -279,6 +285,7 @@ class TestComplianceStandards:
         assert score >= 80
 
 
+@pytest.mark.skipif(not HAS_PANDAS, reason="pandas not installed")
 class TestDataFrames:
     """Test pandas DataFrame operations"""
     

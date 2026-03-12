@@ -1,4 +1,4 @@
-.PHONY: help build up down logs test clean install local-install local-up local-down tunnel-setup tunnel-start tunnel-stop tunnel-status
+.PHONY: help build up down logs test test-coverage test-coverage-backend test-coverage-frontend clean install local-install local-up local-down tunnel-setup tunnel-start tunnel-stop tunnel-status
 
 help:
 	@echo "VulnScope Deployment Commands"
@@ -11,6 +11,9 @@ help:
 	@echo "  make down         - Stop all services"
 	@echo "  make logs         - View logs"
 	@echo "  make test         - Run tests"
+	@echo "  make test-coverage- Run all tests with coverage"
+	@echo "  make test-coverage-backend  - Backend coverage only"
+	@echo "  make test-coverage-frontend - Frontend coverage only"
 	@echo "  make clean        - Clean up"
 	@echo ""
 	@echo "Production (GCP/Free Tier):"
@@ -48,6 +51,47 @@ logs:
 
 test:
 	python3 -m pytest tests/ -v
+
+# ==============================================
+# Test Coverage
+# ==============================================
+
+# Run all tests with coverage
+test-coverage: test-coverage-backend test-coverage-frontend
+	@echo ""
+	@echo "=========================================="
+	@echo "  Coverage reports generated!"
+	@echo "=========================================="
+	@echo "  Backend:  htmlcov/index.html"
+	@echo "  Frontend: frontend/coverage/lcov-report/index.html"
+	@echo ""
+
+# Backend coverage (Python/pytest)
+test-coverage-backend:
+	@echo "Running backend tests with coverage..."
+	.venv/bin/python -m pytest tests/ -v --cov=src --cov-report=term-missing --cov-report=html:htmlcov --cov-report=xml:coverage.xml
+	@echo "Backend coverage report: htmlcov/index.html"
+
+# Frontend coverage (Jest)
+test-coverage-frontend:
+	@echo "Running frontend tests with coverage..."
+	cd frontend && npm test -- --coverage
+	@echo "Frontend coverage report: frontend/coverage/lcov-report/index.html"
+
+# Open coverage reports in browser
+coverage-report:
+	@echo "Opening coverage reports..."
+	@if command -v xdg-open >/dev/null 2>&1; then \
+		xdg-open htmlcov/index.html 2>/dev/null & \
+		xdg-open frontend/coverage/lcov-report/index.html 2>/dev/null & \
+	elif command -v open >/dev/null 2>&1; then \
+		open htmlcov/index.html 2>/dev/null & \
+		open frontend/coverage/lcov-report/index.html 2>/dev/null & \
+	else \
+		echo "Open manually:"; \
+		echo "  Backend:  htmlcov/index.html"; \
+		echo "  Frontend: frontend/coverage/lcov-report/index.html"; \
+	fi
 
 clean:
 	docker-compose down -v

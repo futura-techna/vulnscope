@@ -1,0 +1,38 @@
+# Coverage configuration for VulnScope Backend
+
+[run]
+source = src
+branch = True
+omit =
+    */tests/*
+    */__init__.py
+    */migrations/*
+    */venv/*
+    */.venv/*
+    */env/*
+    */node_modules/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    @abstractmethod
+    @abc.abstractmethod
+ignore_errors = True
+skip_empty = True
+precision = 2
+
+[html]
+directory = htmlcov
+title = VulnScope Backend Coverage Report
+
+[xml]
+output = coverage.xml
+
+[json]
+output = coverage.json
+show_contexts = True
