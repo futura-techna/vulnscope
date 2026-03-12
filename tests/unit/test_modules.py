@@ -56,10 +56,14 @@ class TestModules:
         from src.discovery.passive_proxy import PassiveScanner
         assert PassiveScanner is not None
     
-    @pytest.mark.skip(reason="Streamlit dashboard module not installed")
+    @pytest.mark.skipif(
+        __import__("importlib").util.find_spec("streamlit") is None,
+        reason="Streamlit dashboard module not installed"
+    )
     def test_dashboard(self):
         # Streamlit dashboard is optional and may not be installed
-        pass
+        import streamlit
+        assert streamlit is not None
     
     def test_s3_storage(self):
         from src.evidence.s3_storage import S3EvidenceStorage
