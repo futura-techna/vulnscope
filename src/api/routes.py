@@ -8,12 +8,13 @@ from fastapi.responses import JSONResponse
 from typing import List, Optional, Dict, Any
 from uuid import UUID, uuid4
 from datetime import datetime
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 import asyncio
 import random
 import os
 import json
+import logging
 
 from .schemas import (
     TargetCreate, TargetResponse, TargetUpdate,
@@ -28,6 +29,8 @@ from ..database import (
     get_session, get_or_create_session, init_db,
     TargetModel, ScanModel, FindingModel, ReportModel, SettingsModel, ComplianceDataModel
 )
+
+logger = logging.getLogger(__name__)
 
 # Fallback in-memory storage (used if database is not available)
 _targets_db: Dict[UUID, Target] = {}
@@ -44,7 +47,8 @@ async def get_db_session():
     if USE_DATABASE:
         try:
             return await get_or_create_session()
-        except Exception:
+        except Exception as e:
+            logger.error(f"Failed to get database session: {e}")
             return None
     return None
 
@@ -67,6 +71,71 @@ router = APIRouter()
 @router.get("/dashboard/stats", tags=["dashboard"])
 async def get_dashboard_stats():
     """Get dashboard statistics"""
+    if USE_DATABASE:
+        session = await get_db_session()
+        if session:
+            try:
+                # Get scan counts
+                total_scans_result = await session.execute(select(func.count()).select_from(ScanModel))
+                total_scans = total_scans_result.scalar() or 0
+                
+                active_scans_result = await session.execute(
+                    select(func.count()).select_from(ScanModel)
+                    .where(ScanModel.status.in_(["running", "pending"]))
+                )
+                active_scans = active_scans_result.scalar() or 0
+                
+                # Get finding counts
+                total_findings_result = await session.execute(select(func.count()).select_from(FindingModel))
+                total_findings = total_findings_result.scalar() or 0
+                
+                critical_result = await session.execute(
+                    select(func.count()).select_from(FindingModel)
+                    .where(FindingModel.severity == "Critical")
+                )
+                critical_findings = critical_result.scalar() or 0
+                
+                high_result = await session.execute(
+                    select(func.count()).select_from(FindingModel)
+                    .where(FindingModel.severity == "High")
+                )
+                high_findings = high_result.scalar() or 0
+                
+                medium_result = await session.execute(
+                    select(func.count()).select_from(FindingModel)
+                    .where(FindingModel.severity == "Medium")
+                )
+                medium_findings = medium_result.scalar() or 0
+                
+                low_result = await session.execute(
+                    select(func.count()).select_from(FindingModel)
+                    .where(FindingModel.severity == "Low")
+                )
+                low_findings = low_result.scalar() or 0
+                
+                # Get target count
+                total_targets_result = await session.execute(select(func.count()).select_from(TargetModel))
+                total_targets = total_targets_result.scalar() or 0
+                
+                return {
+                    "total_scans": total_scans,
+                    "active_scans": active_scans,
+                    "total_findings": total_findings,
+                    "critical_findings": critical_findings,
+                    "high_findings": high_findings,
+                    "medium_findings": medium_findings,
+                    "low_findings": low_findings,
+                    "total_targets": total_targets,
+                    "scans_change": random.randint(-5, 15),
+                    "critical_change": random.randint(-3, 2),
+                    "high_change": random.randint(-5, 10),
+                }
+            except Exception as e:
+                logger.error(f"Failed to fetch dashboard stats from database: {e}")
+            finally:
+                await session.close()
+    
+    # Fallback to in-memory storage
     total_scans = len(_scans_db)
     active_scans = sum(1 for s in _scans_db.values() if s.status in [Status.RUNNING, Status.PENDING])
     
@@ -85,7 +154,7 @@ async def get_dashboard_stats():
         "medium_findings": medium_findings,
         "low_findings": low_findings,
         "total_targets": len(_targets_db),
-        "scans_change": random.randint(-5, 15),  # Mock change percentage
+        "scans_change": random.randint(-5, 15),
         "critical_change": random.randint(-3, 2),
         "high_change": random.randint(-5, 10),
     }
@@ -106,6 +175,54 @@ async def get_dashboard_trends():
 @router.get("/dashboard/severity", tags=["dashboard"])
 async def get_severity_distribution():
     """Get findings distribution by severity"""
+    if USE_DATABASE:
+        session = await get_db_session()
+        if session:
+            try:
+                critical_result = await session.execute(
+                    select(func.count()).select_from(FindingModel)
+                    .where(FindingModel.severity == "Critical")
+                )
+                critical = critical_result.scalar() or 0
+                
+                high_result = await session.execute(
+                    select(func.count()).select_from(FindingModel)
+                    .where(FindingModel.severity == "High")
+                )
+                high = high_result.scalar() or 0
+                
+                medium_result = await session.execute(
+                    select(func.count()).select_from(FindingModel)
+                    .where(FindingModel.severity == "Medium")
+                )
+                medium = medium_result.scalar() or 0
+                
+                low_result = await session.execute(
+                    select(func.count()).select_from(FindingModel)
+                    .where(FindingModel.severity == "Low")
+                )
+                low = low_result.scalar() or 0
+                
+                info_result = await session.execute(
+                    select(func.count()).select_from(FindingModel)
+                    .where(FindingModel.severity == "Info")
+                )
+                info = info_result.scalar() or 0
+                
+                return {
+                    "severity": [
+                        {"name": "Critical", "count": critical},
+                        {"name": "High", "count": high},
+                        {"name": "Medium", "count": medium},
+                        {"name": "Low", "count": low},
+                        {"name": "Info", "count": info},
+                    ]
+                }
+            except Exception as e:
+                logger.error(f"Failed to fetch severity distribution from database: {e}")
+            finally:
+                await session.close()
+    
     return {
         "severity": [
             {"name": "Critical", "count": sum(1 for f in _findings_db.values() if f.severity == "Critical")},
@@ -131,7 +248,29 @@ async def create_target(target: TargetCreate):
         auth_config=target.auth_config or {},
     )
     
-    # Save to in-memory storage
+    if USE_DATABASE:
+        session = await get_db_session()
+        if session:
+            try:
+                db_target = TargetModel(
+                    id=str(new_target.id),
+                    name=new_target.name,
+                    url=str(new_target.url),
+                    description=new_target.description,
+                    tags=new_target.tags,
+                    auth_type=new_target.auth_type,
+                    auth_config=new_target.auth_config,
+                )
+                session.add(db_target)
+                await session.commit()
+                logger.info(f"Target {new_target.id} saved to database")
+            except Exception as e:
+                logger.error(f"Failed to save target to database: {e}")
+                await session.rollback()
+            finally:
+                await session.close()
+    
+    # Also save to in-memory storage for backward compatibility
     _targets_db[new_target.id] = new_target
     
     return TargetResponse(
@@ -148,8 +287,33 @@ async def create_target(target: TargetCreate):
 @router.get("/targets", response_model=List[TargetResponse], tags=["targets"])
 async def list_targets(skip: int = 0, limit: int = 100):
     """List all targets"""
+    if USE_DATABASE:
+        session = await get_db_session()
+        if session:
+            try:
+                result = await session.execute(
+                    select(TargetModel).offset(skip).limit(limit)
+                )
+                db_targets = result.scalars().all()
+                return [
+                    TargetResponse(
+                        id=UUID(t.id),
+                        name=t.name,
+                        url=t.url,
+                        description=t.description,
+                        tags=t.tags or [],
+                        auth_type=t.auth_type,
+                        created_at=t.created_at,
+                    )
+                    for t in db_targets
+                ]
+            except Exception as e:
+                logger.error(f"Failed to fetch targets from database: {e}")
+            finally:
+                await session.close()
+    
+    # Fallback to in-memory storage
     targets = list(_targets_db.values())
-    # Apply pagination
     return [
         TargetResponse(
             id=t.id,
@@ -167,6 +331,30 @@ async def list_targets(skip: int = 0, limit: int = 100):
 @router.get("/targets/{target_id}", response_model=TargetResponse, tags=["targets"])
 async def get_target(target_id: UUID):
     """Get target by ID"""
+    if USE_DATABASE:
+        session = await get_db_session()
+        if session:
+            try:
+                result = await session.execute(
+                    select(TargetModel).where(TargetModel.id == str(target_id))
+                )
+                t = result.scalar_one_or_none()
+                if t:
+                    return TargetResponse(
+                        id=UUID(t.id),
+                        name=t.name,
+                        url=t.url,
+                        description=t.description,
+                        tags=t.tags or [],
+                        auth_type=t.auth_type,
+                        created_at=t.created_at,
+                    )
+            except Exception as e:
+                logger.error(f"Failed to fetch target from database: {e}")
+            finally:
+                await session.close()
+    
+    # Fallback to in-memory storage
     if target_id not in _targets_db:
         raise HTTPException(status_code=404, detail="Target not found")
     
@@ -185,6 +373,40 @@ async def get_target(target_id: UUID):
 @router.put("/targets/{target_id}", response_model=TargetResponse, tags=["targets"])
 async def update_target(target_id: UUID, target: TargetCreate):
     """Update a target"""
+    if USE_DATABASE:
+        session = await get_db_session()
+        if session:
+            try:
+                result = await session.execute(
+                    select(TargetModel).where(TargetModel.id == str(target_id))
+                )
+                db_target = result.scalar_one_or_none()
+                if db_target:
+                    db_target.name = target.name
+                    db_target.url = target.url
+                    db_target.description = target.description
+                    db_target.tags = target.tags
+                    db_target.auth_type = target.auth_type
+                    db_target.auth_config = target.auth_config or {}
+                    db_target.updated_at = datetime.utcnow()
+                    await session.commit()
+                    
+                    return TargetResponse(
+                        id=UUID(db_target.id),
+                        name=db_target.name,
+                        url=db_target.url,
+                        description=db_target.description,
+                        tags=db_target.tags or [],
+                        auth_type=db_target.auth_type,
+                        created_at=db_target.created_at,
+                    )
+            except Exception as e:
+                logger.error(f"Failed to update target in database: {e}")
+                await session.rollback()
+            finally:
+                await session.close()
+    
+    # Fallback to in-memory storage
     if target_id not in _targets_db:
         raise HTTPException(status_code=404, detail="Target not found")
     
@@ -211,10 +433,27 @@ async def update_target(target_id: UUID, target: TargetCreate):
 @router.delete("/targets/{target_id}", tags=["targets"])
 async def delete_target(target_id: UUID):
     """Delete a target"""
-    if target_id not in _targets_db:
-        raise HTTPException(status_code=404, detail="Target not found")
+    if USE_DATABASE:
+        session = await get_db_session()
+        if session:
+            try:
+                result = await session.execute(
+                    select(TargetModel).where(TargetModel.id == str(target_id))
+                )
+                db_target = result.scalar_one_or_none()
+                if db_target:
+                    await session.delete(db_target)
+                    await session.commit()
+            except Exception as e:
+                logger.error(f"Failed to delete target from database: {e}")
+                await session.rollback()
+            finally:
+                await session.close()
     
-    del _targets_db[target_id]
+    # Also delete from in-memory storage
+    if target_id in _targets_db:
+        del _targets_db[target_id]
+    
     return {"status": "deleted", "target_id": str(target_id)}
 
 
@@ -224,8 +463,130 @@ async def delete_target(target_id: UUID):
 _scan_tasks: Dict[UUID, asyncio.Task] = {}
 
 
-async def run_scan_task(scan: Scan, target_url: str):
-    """Execute scan workflow in background"""
+async def run_scan_task_db(scan_id: UUID, target_id: UUID, target_url: str):
+    """Execute scan workflow with database persistence"""
+    logger.info(f"Starting scan {scan_id} for target {target_url}")
+    
+    try:
+        # Update status to RUNNING
+        session = await get_db_session()
+        if session:
+            try:
+                await session.execute(
+                    update(ScanModel)
+                    .where(ScanModel.id == str(scan_id))
+                    .values(status="running", started_at=datetime.utcnow())
+                )
+                await session.commit()
+                logger.info(f"Scan {scan_id} status updated to RUNNING")
+            except Exception as e:
+                logger.error(f"Failed to update scan status: {e}")
+                await session.rollback()
+        
+        # Simulate scan progress with database updates
+        total_steps = 10
+        for step in range(total_steps):
+            await asyncio.sleep(2)  # Simulate work
+            
+            progress = int((step + 1) / total_steps * 100)
+            endpoints_discovered = random.randint(50, 200)
+            
+            # Update progress in database
+            if session:
+                try:
+                    await session.execute(
+                        update(ScanModel)
+                        .where(ScanModel.id == str(scan_id))
+                        .values(progress=progress, endpoints_discovered=endpoints_discovered)
+                    )
+                    await session.commit()
+                    logger.info(f"Scan {scan_id} progress: {progress}%")
+                except Exception as e:
+                    logger.error(f"Failed to update scan progress: {e}")
+                    await session.rollback()
+            
+            # Generate some mock findings during scan
+            if random.random() > 0.7:
+                finding_id = str(uuid4())
+                finding = FindingModel(
+                    id=finding_id,
+                    scan_id=str(scan_id),
+                    target_id=str(target_id),
+                    title=f"Vulnerability found at /api/endpoint{step}",
+                    severity=random.choice(["Critical", "High", "Medium", "Low"]),
+                    vuln_type=random.choice(["SQL Injection", "XSS", "SSRF", "IDOR", "CSRF"]),
+                    url=f"{target_url}/api/endpoint{step}",
+                    method=random.choice(["GET", "POST", "PUT", "DELETE"]),
+                    status="Open",
+                )
+                
+                if session:
+                    try:
+                        session.add(finding)
+                        await session.commit()
+                        logger.info(f"Finding {finding_id} created for scan {scan_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to create finding: {e}")
+                        await session.rollback()
+        
+        # Mark completed
+        if session:
+            try:
+                # Count findings
+                result = await session.execute(
+                    select(func.count()).where(FindingModel.scan_id == str(scan_id))
+                )
+                findings_count = result.scalar() or 0
+                
+                await session.execute(
+                    update(ScanModel)
+                    .where(ScanModel.id == str(scan_id))
+                    .values(
+                        status="completed",
+                        completed_at=datetime.utcnow(),
+                        findings_count=findings_count
+                    )
+                )
+                await session.commit()
+                logger.info(f"Scan {scan_id} completed with {findings_count} findings")
+            except Exception as e:
+                logger.error(f"Failed to mark scan completed: {e}")
+                await session.rollback()
+            finally:
+                await session.close()
+        
+    except asyncio.CancelledError:
+        logger.info(f"Scan {scan_id} was cancelled")
+        if session:
+            try:
+                await session.execute(
+                    update(ScanModel)
+                    .where(ScanModel.id == str(scan_id))
+                    .values(status="cancelled", completed_at=datetime.utcnow())
+                )
+                await session.commit()
+            except Exception:
+                await session.rollback()
+            finally:
+                await session.close()
+    except Exception as e:
+        logger.error(f"Scan {scan_id} failed: {e}")
+        if session:
+            try:
+                await session.execute(
+                    update(ScanModel)
+                    .where(ScanModel.id == str(scan_id))
+                    .values(status="failed", completed_at=datetime.utcnow(), error_message=str(e))
+                )
+                await session.commit()
+            except Exception:
+                await session.rollback()
+            finally:
+                await session.close()
+
+
+async def run_scan_task_memory(scan: Scan, target_url: str):
+    """Execute scan workflow in memory (fallback)"""
     try:
         scan.status = Status.RUNNING
         scan.started_at = datetime.utcnow()
@@ -265,6 +626,29 @@ async def run_scan_task(scan: Scan, target_url: str):
         scan.error_message = str(e)
 
 
+async def get_target_url(target_id: UUID) -> Optional[str]:
+    """Get target URL from database or memory"""
+    if USE_DATABASE:
+        session = await get_db_session()
+        if session:
+            try:
+                result = await session.execute(
+                    select(TargetModel).where(TargetModel.id == str(target_id))
+                )
+                target = result.scalar_one_or_none()
+                if target:
+                    return target.url
+            except Exception as e:
+                logger.error(f"Failed to get target: {e}")
+            finally:
+                await session.close()
+    
+    # Fallback to memory
+    if target_id in _targets_db:
+        return str(_targets_db[target_id].url)
+    return None
+
+
 @router.post("/scans", response_model=ScanResponse, tags=["scans"])
 async def create_scan(scan: ScanCreate, background_tasks: BackgroundTasks):
     """Create and start a new scan"""
@@ -274,10 +658,10 @@ async def create_scan(scan: ScanCreate, background_tasks: BackgroundTasks):
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid target_id format")
     
-    if target_id not in _targets_db:
+    # Get target URL
+    target_url = await get_target_url(target_id)
+    if not target_url:
         raise HTTPException(status_code=404, detail="Target not found")
-    
-    target = _targets_db[target_id]
     
     # Create scan object
     new_scan = Scan(
@@ -292,11 +676,44 @@ async def create_scan(scan: ScanCreate, background_tasks: BackgroundTasks):
         enable_fuzzer=scan.enable_fuzzer,
     )
     
-    # Save scan
-    _scans_db[new_scan.id] = new_scan
-    
-    # Start scan in background
-    background_tasks.add_task(run_scan_task, new_scan, str(target.url))
+    if USE_DATABASE:
+        session = await get_db_session()
+        if session:
+            try:
+                db_scan = ScanModel(
+                    id=str(new_scan.id),
+                    target_id=str(target_id),
+                    name=new_scan.name,
+                    description=new_scan.description,
+                    scan_type=new_scan.scan_type,
+                    status="pending",
+                    progress=0,
+                    enable_crawler=new_scan.enable_crawler,
+                    enable_openapi_import=new_scan.enable_openapi_import,
+                    enable_graphql_import=new_scan.enable_graphql_import,
+                    enable_dast=new_scan.enable_dast,
+                    enable_fuzzer=new_scan.enable_fuzzer,
+                )
+                session.add(db_scan)
+                await session.commit()
+                logger.info(f"Scan {new_scan.id} saved to database")
+                
+                # Start scan using asyncio.create_task for immediate execution
+                task = asyncio.create_task(run_scan_task_db(new_scan.id, target_id, target_url))
+                _scan_tasks[new_scan.id] = task
+                logger.info(f"Scan {new_scan.id} task started")
+            except Exception as e:
+                logger.error(f"Failed to save scan to database: {e}")
+                await session.rollback()
+            finally:
+                await session.close()
+    else:
+        # Fallback to in-memory storage
+        _scans_db[new_scan.id] = new_scan
+        
+        # Start scan in background using asyncio.create_task
+        task = asyncio.create_task(run_scan_task_memory(new_scan, target_url))
+        _scan_tasks[new_scan.id] = task
     
     return ScanResponse(
         id=new_scan.id,
@@ -320,6 +737,50 @@ async def list_scans(
     limit: int = 100
 ):
     """List all scans"""
+    if USE_DATABASE:
+        session = await get_db_session()
+        if session:
+            try:
+                query = select(ScanModel)
+                
+                # Filter by target_id
+                if target_id:
+                    query = query.where(ScanModel.target_id == target_id)
+                
+                # Filter by status
+                if status:
+                    query = query.where(ScanModel.status == status.lower())
+                
+                # Sort by created_at descending
+                query = query.order_by(ScanModel.created_at.desc())
+                
+                # Apply pagination
+                query = query.offset(skip).limit(limit)
+                
+                result = await session.execute(query)
+                db_scans = result.scalars().all()
+                
+                return [
+                    ScanResponse(
+                        id=UUID(s.id),
+                        target_id=UUID(s.target_id),
+                        name=s.name,
+                        status=s.status,
+                        progress=s.progress or 0,
+                        endpoints_discovered=s.endpoints_discovered or 0,
+                        findings_count=s.findings_count or 0,
+                        created_at=s.created_at,
+                        started_at=s.started_at,
+                        completed_at=s.completed_at,
+                    )
+                    for s in db_scans
+                ]
+            except Exception as e:
+                logger.error(f"Failed to fetch scans from database: {e}")
+            finally:
+                await session.close()
+    
+    # Fallback to in-memory storage
     scans = list(_scans_db.values())
     
     # Filter by target_id
@@ -362,6 +823,33 @@ async def list_scans(
 @router.get("/scans/{scan_id}", response_model=ScanResponse, tags=["scans"])
 async def get_scan(scan_id: UUID):
     """Get scan by ID"""
+    if USE_DATABASE:
+        session = await get_db_session()
+        if session:
+            try:
+                result = await session.execute(
+                    select(ScanModel).where(ScanModel.id == str(scan_id))
+                )
+                s = result.scalar_one_or_none()
+                if s:
+                    return ScanResponse(
+                        id=UUID(s.id),
+                        target_id=UUID(s.target_id),
+                        name=s.name,
+                        status=s.status,
+                        progress=s.progress or 0,
+                        endpoints_discovered=s.endpoints_discovered or 0,
+                        findings_count=s.findings_count or 0,
+                        created_at=s.created_at,
+                        started_at=s.started_at,
+                        completed_at=s.completed_at,
+                    )
+            except Exception as e:
+                logger.error(f"Failed to fetch scan from database: {e}")
+            finally:
+                await session.close()
+    
+    # Fallback to in-memory storage
     if scan_id not in _scans_db:
         raise HTTPException(status_code=404, detail="Scan not found")
     
@@ -383,6 +871,28 @@ async def get_scan(scan_id: UUID):
 @router.get("/scans/{scan_id}/status", response_model=ScanStatusResponse, tags=["scans"])
 async def get_scan_status(scan_id: UUID):
     """Get scan status"""
+    if USE_DATABASE:
+        session = await get_db_session()
+        if session:
+            try:
+                result = await session.execute(
+                    select(ScanModel).where(ScanModel.id == str(scan_id))
+                )
+                s = result.scalar_one_or_none()
+                if s:
+                    return ScanStatusResponse(
+                        scan_id=scan_id,
+                        status=s.status,
+                        progress=s.progress or 0,
+                        endpoints_discovered=s.endpoints_discovered or 0,
+                        findings_count=s.findings_count or 0,
+                    )
+            except Exception as e:
+                logger.error(f"Failed to fetch scan status from database: {e}")
+            finally:
+                await session.close()
+    
+    # Fallback to in-memory storage
     if scan_id not in _scans_db:
         raise HTTPException(status_code=404, detail="Scan not found")
     
@@ -399,6 +909,41 @@ async def get_scan_status(scan_id: UUID):
 @router.post("/scans/{scan_id}/cancel", tags=["scans"])
 async def cancel_scan(scan_id: UUID):
     """Cancel a running scan"""
+    if USE_DATABASE:
+        session = await get_db_session()
+        if session:
+            try:
+                result = await session.execute(
+                    select(ScanModel).where(ScanModel.id == str(scan_id))
+                )
+                db_scan = result.scalar_one_or_none()
+                if db_scan:
+                    if db_scan.status in ["running", "pending"]:
+                        await session.execute(
+                            update(ScanModel)
+                            .where(ScanModel.id == str(scan_id))
+                            .values(status="cancelled", completed_at=datetime.utcnow())
+                        )
+                        await session.commit()
+                        
+                        # Cancel the task if running
+                        if scan_id in _scan_tasks:
+                            _scan_tasks[scan_id].cancel()
+                        
+                        return {"status": "cancelled", "scan_id": str(scan_id)}
+                    else:
+                        return {"status": "error", "message": f"Scan is already {db_scan.status}"}
+                else:
+                    raise HTTPException(status_code=404, detail="Scan not found")
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"Failed to cancel scan: {e}")
+                await session.rollback()
+            finally:
+                await session.close()
+    
+    # Fallback to in-memory storage
     if scan_id not in _scans_db:
         raise HTTPException(status_code=404, detail="Scan not found")
     
@@ -423,6 +968,77 @@ async def list_findings(
     limit: int = 100
 ):
     """List all findings"""
+    if USE_DATABASE:
+        session = await get_db_session()
+        if session:
+            try:
+                query = select(FindingModel)
+                
+                # Filter by scan_id
+                if scan_id:
+                    query = query.where(FindingModel.scan_id == scan_id)
+                
+                # Filter by target_id
+                if target_id:
+                    query = query.where(FindingModel.target_id == target_id)
+                
+                # Filter by severity
+                if severity:
+                    query = query.where(FindingModel.severity == severity)
+                
+                # Filter by vuln_type
+                if vuln_type:
+                    query = query.where(FindingModel.vuln_type == vuln_type)
+                
+                # Filter by status
+                if status:
+                    query = query.where(FindingModel.status == status)
+                
+                # Sort by created_at descending
+                query = query.order_by(FindingModel.created_at.desc())
+                
+                # Get total count
+                count_query = select(func.count()).select_from(query.subquery())
+                total_result = await session.execute(count_query)
+                total = total_result.scalar() or 0
+                
+                # Apply pagination
+                query = query.offset(skip).limit(limit)
+                
+                result = await session.execute(query)
+                db_findings = result.scalars().all()
+                
+                return FindingListResponse(
+                    total=total,
+                    findings=[
+                        FindingResponse(
+                            id=UUID(f.id),
+                            scan_id=UUID(f.scan_id),
+                            target_id=UUID(f.target_id),
+                            title=f.title,
+                            description=f.description,
+                            severity=f.severity,
+                            vuln_type=f.vuln_type,
+                            url=f.url,
+                            method=f.method,
+                            parameter=f.parameter,
+                            payload=f.payload,
+                            evidence=f.evidence,
+                            status=f.status,
+                            cvss_score=f.cvss_score,
+                            cwe_id=f.cwe_id,
+                            owasp_category=f.owasp_category,
+                            created_at=f.created_at,
+                        )
+                        for f in db_findings
+                    ],
+                )
+            except Exception as e:
+                logger.error(f"Failed to fetch findings from database: {e}")
+            finally:
+                await session.close()
+    
+    # Fallback to in-memory storage
     findings = list(_findings_db.values())
     
     # Filter by scan_id
@@ -488,6 +1104,40 @@ async def list_findings(
 @router.get("/findings/{finding_id}", response_model=FindingResponse, tags=["findings"])
 async def get_finding(finding_id: UUID):
     """Get finding by ID"""
+    if USE_DATABASE:
+        session = await get_db_session()
+        if session:
+            try:
+                result = await session.execute(
+                    select(FindingModel).where(FindingModel.id == str(finding_id))
+                )
+                f = result.scalar_one_or_none()
+                if f:
+                    return FindingResponse(
+                        id=UUID(f.id),
+                        scan_id=UUID(f.scan_id),
+                        target_id=UUID(f.target_id),
+                        title=f.title,
+                        description=f.description,
+                        severity=f.severity,
+                        vuln_type=f.vuln_type,
+                        url=f.url,
+                        method=f.method,
+                        parameter=f.parameter,
+                        payload=f.payload,
+                        evidence=f.evidence,
+                        status=f.status,
+                        cvss_score=f.cvss_score,
+                        cwe_id=f.cwe_id,
+                        owasp_category=f.owasp_category,
+                        created_at=f.created_at,
+                    )
+            except Exception as e:
+                logger.error(f"Failed to fetch finding from database: {e}")
+            finally:
+                await session.close()
+    
+    # Fallback to in-memory storage
     if finding_id not in _findings_db:
         raise HTTPException(status_code=404, detail="Finding not found")
     
@@ -516,6 +1166,39 @@ async def get_finding(finding_id: UUID):
 @router.patch("/findings/{finding_id}", tags=["findings"])
 async def update_finding(finding_id: UUID, status: str = None, false_positive: bool = False):
     """Update finding status"""
+    if USE_DATABASE:
+        session = await get_db_session()
+        if session:
+            try:
+                result = await session.execute(
+                    select(FindingModel).where(FindingModel.id == str(finding_id))
+                )
+                db_finding = result.scalar_one_or_none()
+                if db_finding:
+                    if status:
+                        db_finding.status = status
+                    if false_positive:
+                        db_finding.false_positive = True
+                        db_finding.status = "False Positive"
+                    await session.commit()
+                    
+                    return {
+                        "status": "updated",
+                        "finding_id": str(finding_id),
+                        "new_status": db_finding.status,
+                        "false_positive": false_positive,
+                    }
+                else:
+                    raise HTTPException(status_code=404, detail="Finding not found")
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"Failed to update finding: {e}")
+                await session.rollback()
+            finally:
+                await session.close()
+    
+    # Fallback to in-memory storage
     if finding_id not in _findings_db:
         raise HTTPException(status_code=404, detail="Finding not found")
     
@@ -537,6 +1220,36 @@ async def update_finding(finding_id: UUID, status: str = None, false_positive: b
 @router.post("/findings/{finding_id}/verify", tags=["findings"])
 async def verify_finding(finding_id: UUID, verified: bool = True):
     """Verify a finding"""
+    if USE_DATABASE:
+        session = await get_db_session()
+        if session:
+            try:
+                result = await session.execute(
+                    select(FindingModel).where(FindingModel.id == str(finding_id))
+                )
+                db_finding = result.scalar_one_or_none()
+                if db_finding:
+                    db_finding.verified = verified
+                    if verified:
+                        db_finding.verified_at = datetime.utcnow()
+                    await session.commit()
+                    
+                    return {
+                        "status": "verified",
+                        "finding_id": str(finding_id),
+                        "verified": verified,
+                    }
+                else:
+                    raise HTTPException(status_code=404, detail="Finding not found")
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"Failed to verify finding: {e}")
+                await session.rollback()
+            finally:
+                await session.close()
+    
+    # Fallback to in-memory storage
     if finding_id not in _findings_db:
         raise HTTPException(status_code=404, detail="Finding not found")
     
