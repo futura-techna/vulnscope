@@ -1,24 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
-
-const API_URL = process.env.API_URL || 'http://localhost:8000'
+import { getApiUrl } from '@/lib/api-config'
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const apiUrl = getApiUrl()
   try {
     const targetId = params.id
     
     console.log('[Targets] Deleting target:', targetId)
-    console.log('[Targets] API URL:', `${API_URL}/api/v1/targets/${targetId}`)
+    console.log('[Targets] API URL:', `${apiUrl}/api/v1/targets/${targetId}`)
     
-    const response = await fetch(`${API_URL}/api/v1/targets/${targetId}`, {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 30000)
+    
+    const response = await fetch(`${apiUrl}/api/v1/targets/${targetId}`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
+      signal: controller.signal,
     })
+
+    clearTimeout(timeoutId)
 
     const contentType = response.headers.get('content-type')
     
@@ -53,7 +59,7 @@ export async function DELETE(
       
       if (error.message.includes('fetch failed') || error.message.includes('ECONNREFUSED')) {
         return NextResponse.json(
-          { detail: 'Impossible de se connecter au serveur.' },
+          { detail: 'Impossible de se connecter au serveur backend.' },
           { status: 503 }
         )
       }
@@ -70,18 +76,25 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const apiUrl = getApiUrl()
   try {
     const targetId = params.id
     
     console.log('[Targets] Fetching target:', targetId)
     
-    const response = await fetch(`${API_URL}/api/v1/targets/${targetId}`, {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 30000)
+    
+    const response = await fetch(`${apiUrl}/api/v1/targets/${targetId}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
+      signal: controller.signal,
     })
+
+    clearTimeout(timeoutId)
 
     const contentType = response.headers.get('content-type')
     
@@ -115,7 +128,7 @@ export async function GET(
       
       if (error.message.includes('fetch failed') || error.message.includes('ECONNREFUSED')) {
         return NextResponse.json(
-          { detail: 'Impossible de se connecter au serveur.' },
+          { detail: 'Impossible de se connecter au serveur backend.' },
           { status: 503 }
         )
       }

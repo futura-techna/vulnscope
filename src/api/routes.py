@@ -105,7 +105,7 @@ async def create_target(target: TargetCreate):
         name=target.name,
         url=target.url,
         description=target.description,
-        tags=target.tags,
+        tags=target.tags or [],
         auth_type=target.auth_type,
         auth_config=target.auth_config or {},
     )

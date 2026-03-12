@@ -156,8 +156,10 @@ class APIClient {
   private baseURL: string
 
   constructor() {
-    // Use relative URL for server-side API routes, or backend URL for direct calls
-    this.baseURL = process.env.NEXT_PUBLIC_API_URL || '/api'
+    // Always use relative '/api' to go through Next.js API routes
+    // This ensures proper proxying to the backend and avoids CORS issues
+    // The Next.js API routes will forward requests to the actual backend
+    this.baseURL = '/api'
     
     this.client = axios.create({
       baseURL: this.baseURL,

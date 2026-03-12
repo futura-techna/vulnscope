@@ -1,18 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
-
-const API_URL = process.env.API_URL || 'http://localhost:8000'
+import { getApiUrl } from '@/lib/api-config'
 
 export async function GET(request: NextRequest) {
+  const apiUrl = getApiUrl()
   try {
-    console.log('[Targets] Fetching targets from:', `${API_URL}/api/v1/targets`)
+    console.log('[Targets] Fetching targets from:', `${apiUrl}/api/v1/targets`)
     
-    const response = await fetch(`${API_URL}/api/v1/targets`, {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 30000)
+    
+    const response = await fetch(`${apiUrl}/api/v1/targets`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
+      signal: controller.signal,
     })
+
+    clearTimeout(timeoutId)
 
     const contentType = response.headers.get('content-type')
     
@@ -46,7 +52,7 @@ export async function GET(request: NextRequest) {
       
       if (error.message.includes('fetch failed') || error.message.includes('ECONNREFUSED')) {
         return NextResponse.json(
-          { detail: 'Impossible de se connecter au serveur.' },
+          { detail: 'Impossible de se connecter au serveur backend. Vérifiez que le backend est en cours d\'exécution.' },
           { status: 503 }
         )
       }
@@ -60,20 +66,27 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const apiUrl = getApiUrl()
   try {
     const body = await request.json()
     
     console.log('[Targets] Creating target:', body)
-    console.log('[Targets] API URL:', `${API_URL}/api/v1/targets`)
+    console.log('[Targets] API URL:', `${apiUrl}/api/v1/targets`)
     
-    const response = await fetch(`${API_URL}/api/v1/targets`, {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 30000)
+    
+    const response = await fetch(`${apiUrl}/api/v1/targets`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
       body: JSON.stringify(body),
+      signal: controller.signal,
     })
+
+    clearTimeout(timeoutId)
 
     const contentType = response.headers.get('content-type')
     
@@ -108,7 +121,7 @@ export async function POST(request: NextRequest) {
       
       if (error.message.includes('fetch failed') || error.message.includes('ECONNREFUSED')) {
         return NextResponse.json(
-          { detail: 'Impossible de se connecter au serveur.' },
+          { detail: 'Impossible de se connecter au serveur backend. Vérifiez que le backend est en cours d\'exécution.' },
           { status: 503 }
         )
       }

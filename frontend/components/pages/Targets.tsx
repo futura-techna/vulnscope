@@ -67,13 +67,29 @@ export function Targets() {
       setSuccess('Cible créée avec succès!')
       setShowForm(false)
       resetForm()
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('[Targets] Error creating target:', err)
-      if (err instanceof Error) {
-        setError(err.message)
-      } else {
-        setError('Une erreur inattendue s\'est produite.')
+      // Handle different error formats
+      let errorMessage = 'Une erreur inattendue s\'est produite.'
+      
+      if (err && typeof err === 'object') {
+        // Axios error format
+        const axiosError = err as { response?: { data?: { detail?: string } }; message?: string }
+        if (axiosError.response?.data?.detail) {
+          errorMessage = axiosError.response.data.detail
+        } else if (axiosError.message) {
+          // Network errors
+          if (axiosError.message === 'Network Error') {
+            errorMessage = 'Erreur réseau: Impossible de se connecter au serveur. Vérifiez que le backend est en cours d\'exécution.'
+          } else {
+            errorMessage = axiosError.message
+          }
+        }
+      } else if (err instanceof Error) {
+        errorMessage = err.message
       }
+      
+      setError(errorMessage)
     }
   }
 
