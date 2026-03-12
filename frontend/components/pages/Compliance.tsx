@@ -12,9 +12,9 @@ interface ComplianceCategory {
 
 export function Compliance() {
   // Use React Query hooks for automatic refetching and cache invalidation
-  const { data: standards, isLoading: standardsLoading, error: standardsError, refetch: refetchStandards } = useCompliance()
+  const { data: standards = [], isLoading: standardsLoading, error: standardsError, refetch: refetchStandards } = useCompliance()
   const { data: findingsData, isLoading: findingsLoading } = useFindings({ limit: 100 })
-  const { data: categories, isLoading: categoriesLoading, refetch: refetchCategories } = useComplianceCategories()
+  const { data: categories = [], isLoading: categoriesLoading, refetch: refetchCategories } = useComplianceCategories()
 
   const isLoading = standardsLoading || findingsLoading || categoriesLoading
   const error = standardsError ? 'Failed to load compliance data' : null

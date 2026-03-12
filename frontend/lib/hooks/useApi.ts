@@ -271,8 +271,13 @@ export function useCompliance() {
   return useQuery({
     queryKey: queryKeys.compliance,
     queryFn: async () => {
-      const standards = await api.getComplianceStandards()
-      return standards
+      try {
+        const standards = await api.getComplianceStandards()
+        return standards || []
+      } catch (error) {
+        console.error('[useCompliance] Error fetching standards:', error)
+        return []
+      }
     },
     staleTime: 30000, // 30 seconds - more frequent updates
     refetchInterval: 60000, // Auto-refresh every minute
@@ -283,8 +288,13 @@ export function useComplianceCategories() {
   return useQuery({
     queryKey: ['compliance-categories'],
     queryFn: async () => {
-      const response = await api.client.get('/compliance/categories')
-      return response.data.categories || []
+      try {
+        const response = await api.client.get('/compliance/categories')
+        return response.data.categories || []
+      } catch (error) {
+        console.error('[useComplianceCategories] Error fetching categories:', error)
+        return []
+      }
     },
     staleTime: 30000,
     refetchInterval: 60000,
