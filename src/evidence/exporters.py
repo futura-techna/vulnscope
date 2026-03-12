@@ -1,6 +1,6 @@
 """
 VulnScope - Report Exporters
-Export findings in various formats (JSON, XML, HTML, SARIF, CSV)
+Export findings in various formats (JSON, XML, HTML, SARIF, CSV, PDF)
 """
 
 import json
@@ -371,8 +371,8 @@ class HTMLExporter(Exporter):
             html += f"""
         <div class="finding {severity_class}">
             <div class="finding-header">
-                <span class="finding-title</span>
-                <span class="sever">{finding.title}ity-badge {severity_class}">{finding.severity.value}</span>
+                <span class="finding-title">{finding.title}</span>
+                <span class="severity-badge {severity_class}">{finding.severity.value}</span>
             </div>
             <p><strong>Type:</strong> {finding.vulnerability_type.value}</p>
             <p>{finding.description}</p>
@@ -503,6 +503,103 @@ class CSVExporter(Exporter):
         return output.getvalue()
 
 
+class PDFExporter(Exporter):
+    """Export findings as PDF"""
+    
+    @property
+    def format(self) -> str:
+        return "pdf"
+    
+    def export(self, findings: List[Finding], scan: Scan, 
+               target: Target) -> str:
+        """Export findings as PDF - returns HTML that can be converted to PDF"""
+        # Generate HTML content that can be rendered as PDF
+        html_exporter = HTMLExporter()
+        return html_exporter.export(findings, scan, target)
+    
+    def export_to_file(self, findings: List[Finding], scan: Scan,
+                      target: Target, output_path: str) -> str:
+        """Export findings to PDF file"""
+        try:
+            # Try to use weasyprint if available
+            from weasyprint import HTML
+            
+            html_content = self.export(findings, scan, target)
+            HTML(string=html_content).write_pdf(output_path)
+            return output_path
+        except ImportError:
+            # Fallback: try reportlab
+            try:
+                from reportlab.lib.pagesizes import letter
+                from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                from reportlab.lib.units import inch
+                from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+                from reportlab.lib import colors
+                
+                doc = SimpleDocTemplate(output_path, pagesize=letter)
+                styles = getSampleStyleSheet()
+                story = []
+                
+                # Title
+                title_style = ParagraphStyle(
+                    'CustomTitle',
+                    parent=styles['Heading1'],
+                    fontSize=24,
+                    spaceAfter=30
+                )
+                story.append(Paragraph("VulnScope Security Report", title_style))
+                story.append(Spacer(1, 12))
+                
+                # Metadata
+                story.append(Paragraph(f"<b>Target:</b> {target.name} ({target.url})", styles['Normal']))
+                story.append(Paragraph(f"<b>Scan:</b> {scan.name}", styles['Normal']))
+                story.append(Paragraph(f"<b>Generated:</b> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}", styles['Normal']))
+                story.append(Spacer(1, 24))
+                
+                # Summary
+                story.append(Paragraph("Summary", styles['Heading2']))
+                summary_data = [
+                    ['Severity', 'Count'],
+                    ['Critical', str(len([f for f in findings if f.severity == Severity.CRITICAL]))],
+                    ['High', str(len([f for f in findings if f.severity == Severity.HIGH]))],
+                    ['Medium', str(len([f for f in findings if f.severity == Severity.MEDIUM]))],
+                    ['Low', str(len([f for f in findings if f.severity == Severity.LOW]))],
+                    ['Info', str(len([f for f in findings if f.severity == Severity.INFO]))],
+                ]
+                summary_table = Table(summary_data, colWidths=[2*inch, 1*inch])
+                summary_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 12),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ]))
+                story.append(summary_table)
+                story.append(Spacer(1, 24))
+                
+                # Findings
+                story.append(Paragraph("Findings", styles['Heading2']))
+                for finding in findings:
+                    story.append(Paragraph(f"<b>{finding.title}</b> [{finding.severity.value}]", styles['Heading3']))
+                    story.append(Paragraph(f"<b>Type:</b> {finding.vulnerability_type.value}", styles['Normal']))
+                    if finding.description:
+                        story.append(Paragraph(f"<b>Description:</b> {finding.description}", styles['Normal']))
+                    story.append(Spacer(1, 12))
+                
+                doc.build(story)
+                return output_path
+            except ImportError:
+                # Final fallback: save as HTML with .pdf extension note
+                html_content = self.export(findings, scan, target)
+                html_path = output_path.replace('.pdf', '.html')
+                with open(html_path, 'w') as f:
+                    f.write(html_content)
+                return html_path
+
+
 # Export factory
 class ExporterFactory:
     """Factory for creating exporters"""
@@ -513,6 +610,7 @@ class ExporterFactory:
         "html": HTMLExporter,
         "sarif": SARIFExporter,
         "csv": CSVExporter,
+        "pdf": PDFExporter,
     }
     
     @classmethod

@@ -291,10 +291,21 @@ class APIClient {
   }
 
   async downloadReport(id: string): Promise<Blob> {
-    const response = await this.client.get(`/reports/${id}/download`, {
-      responseType: 'blob'
+    // Use fetch directly for blob response
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+    const response = await fetch(`/api/reports/${id}/download`, {
+      method: 'GET',
+      headers: {
+        'Accept': '*/*',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      }
     })
-    return response.data
+    
+    if (!response.ok) {
+      throw new Error(`Failed to download report: ${response.status}`)
+    }
+    
+    return response.blob()
   }
 
   // Compliance

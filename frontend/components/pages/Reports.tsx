@@ -1,9 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { FileText, Download, FileJson, FileCode, File, Loader2, RefreshCw } from 'lucide-react'
+import { FileText, Download, FileJson, FileCode, File, Loader2, RefreshCw, CheckCircle } from 'lucide-react'
 import { cn, formatDate } from '@/lib/utils'
 import { useReports, useGenerateReport, useScans } from '@/lib/hooks/useApi'
+import api from '@/lib/api'
 
 export function Reports() {
   const [selectedScan, setSelectedScan] = useState('')
@@ -59,8 +60,25 @@ export function Reports() {
     { id: 'html', name: 'HTML', icon: FileCode, color: 'text-orange-500' },
     { id: 'csv', name: 'CSV', icon: FileText, color: 'text-green-500' },
     { id: 'sarif', name: 'SARIF', icon: FileCode, color: 'text-purple-500' },
-    { id: 'pdf', name: 'PDF', icon: File, color: 'text-red-500', disabled: true },
+    { id: 'pdf', name: 'PDF', icon: File, color: 'text-red-500' },
   ]
+
+  const handleDownloadReport = async (reportId: string) => {
+    try {
+      const blob = await api.downloadReport(reportId)
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `report-${reportId}`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (error) {
+      console.error('Failed to download report:', error)
+      alert('Failed to download report. Please try again.')
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -241,7 +259,10 @@ export function Reports() {
                       </td>
                       <td className="py-3 px-4 text-muted-foreground">{report.size || 'N/A'}</td>
                       <td className="py-3 px-4">
-                        <button className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90">
+                        <button 
+                          onClick={() => handleDownloadReport(report.id)}
+                          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90"
+                        >
                           <Download className="h-4 w-4" />
                           Download
                         </button>
