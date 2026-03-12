@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { AlertTriangle, Filter, Download, Eye, Loader2, RefreshCw, X, CheckCircle } from 'lucide-react'
+import { AlertTriangle, Filter, Download, Eye, Loader2, RefreshCw, X, CheckCircle, FileJson, FileText } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { cn, formatDate, getSeverityColor, getSeverityTextColor } from '@/lib/utils'
 import { useFindings, useUpdateFinding, useTargets, useScans } from '@/lib/hooks/useApi'
@@ -12,14 +12,26 @@ export function Findings() {
   const [selectedStatus, setSelectedStatus] = useState('All')
   const [showCriticalOnly, setShowCriticalOnly] = useState(false)
   const [selectedFinding, setSelectedFinding] = useState<string | null>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [showExportMenu, setShowExportMenu] = useState(false)
 
   // Fetch data using React Query hooks
-  const { data: findingsData, isLoading: findingsLoading, refetch: refetchFindings } = useFindings({ limit: 100 })
+  const { data: findingsData, isLoading: findingsLoading, refetch: refetchFindings, isFetching } = useFindings({ limit: 100 })
   const { data: targets, isLoading: targetsLoading } = useTargets()
   const { data: scans, isLoading: scansLoading } = useScans()
   const updateFinding = useUpdateFinding()
 
   const isLoading = findingsLoading || targetsLoading || scansLoading
+  
+  // Handle refresh with visual feedback
+  const handleRefresh = async () => {
+    setIsRefreshing(true)
+    try {
+      await refetchFindings()
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 500) // Minimum visual feedback time
+    }
+  }
 
   // Get unique vulnerability types from findings
   const vulnTypes = [...new Set(findingsData?.findings.map(f => f.vuln_type) || [])]
@@ -51,6 +63,80 @@ export function Findings() {
       console.error('Failed to update finding:', error)
     }
   }
+  
+  // Export functions
+  const exportToJSON = () => {
+    if (!filteredFindings.length) {
+      alert('No findings to export')
+      return
+    }
+    
+    const exportData = filteredFindings.map(f => ({
+      id: f.id,
+      title: f.title,
+      severity: f.severity,
+      vuln_type: f.vuln_type,
+      status: f.status,
+      url: f.url,
+      method: f.method,
+      parameter: f.parameter,
+      payload: f.payload,
+      evidence: f.evidence,
+      cvss_score: f.cvss_score,
+      cwe_id: f.cwe_id,
+      owasp_category: f.owasp_category,
+      created_at: f.created_at
+    }))
+    
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `findings-export-${new Date().toISOString().split('T')[0]}.json`
+    document.body.appendChild(a)
+    a.click()
+    window.URL.revokeObjectURL(url)
+    document.body.removeChild(a)
+    setShowExportMenu(false)
+  }
+  
+  const exportToCSV = () => {
+    if (!filteredFindings.length) {
+      alert('No findings to export')
+      return
+    }
+    
+    const headers = ['ID', 'Title', 'Severity', 'Type', 'Status', 'URL', 'Method', 'Parameter', 'CVSS Score', 'Created At']
+    const csvRows = [headers.join(',')]
+    
+    filteredFindings.forEach(f => {
+      const row = [
+        f.id,
+        `"${(f.title || '').replace(/"/g, '""')}"`,
+        f.severity,
+        f.vuln_type,
+        f.status,
+        `"${(f.url || '').replace(/"/g, '""')}"`,
+        f.method || '',
+        f.parameter || '',
+        f.cvss_score || '',
+        f.created_at
+      ]
+      csvRows.push(row.join(','))
+    })
+    
+    const csvContent = csvRows.join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `findings-export-${new Date().toISOString().split('T')[0]}.csv`
+    document.body.appendChild(a)
+    a.click()
+    window.URL.revokeObjectURL(url)
+    document.body.removeChild(a)
+    setShowExportMenu(false)
+  }
 
   return (
     <div className="space-y-6">
@@ -60,13 +146,49 @@ export function Findings() {
           <h1 className="text-3xl font-bold">Findings</h1>
           <p className="text-muted-foreground mt-1">View and manage vulnerabilities</p>
         </div>
-        <button
-          onClick={() => refetchFindings()}
-          className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-muted"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Export Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              disabled={!filteredFindings.length}
+              className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Download className="h-4 w-4" />
+              Export
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 mt-2 w-48 bg-card border rounded-lg shadow-lg z-10">
+                <button
+                  onClick={exportToJSON}
+                  className="w-full flex items-center gap-2 px-4 py-2 hover:bg-muted rounded-t-lg"
+                >
+                  <FileJson className="h-4 w-4 text-blue-500" />
+                  Export as JSON
+                </button>
+                <button
+                  onClick={exportToCSV}
+                  className="w-full flex items-center gap-2 px-4 py-2 hover:bg-muted rounded-b-lg"
+                >
+                  <FileText className="h-4 w-4 text-green-500" />
+                  Export as CSV
+                </button>
+              </div>
+            )}
+          </div>
+          {/* Refresh Button */}
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing || isFetching}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-muted disabled:opacity-50",
+              isRefreshing && "bg-muted"
+            )}
+          >
+            <RefreshCw className={cn("h-4 w-4", (isRefreshing || isFetching) && "animate-spin")} />
+            {isRefreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       {/* Critical Findings Alert */}
