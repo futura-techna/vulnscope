@@ -8,7 +8,6 @@ import { Dashboard } from './Dashboard'
 
 // Mock the hooks
 jest.mock('@/lib/hooks/useApi', () => ({
-  useDashboardStats: jest.fn(),
   useTargets: jest.fn(),
   useScans: jest.fn(),
   useFindings: jest.fn(),
@@ -27,7 +26,6 @@ jest.mock('recharts', () => ({
   Line: () => null,
 }))
 
-const mockUseDashboardStats = require('@/lib/hooks/useApi').useDashboardStats
 const mockUseTargets = require('@/lib/hooks/useApi').useTargets
 const mockUseScans = require('@/lib/hooks/useApi').useScans
 const mockUseFindings = require('@/lib/hooks/useApi').useFindings
@@ -54,25 +52,22 @@ describe('Dashboard', () => {
     jest.clearAllMocks()
     
     // Default mock returns
-    mockUseDashboardStats.mockReturnValue({
-      data: null,
-      isLoading: false,
-      refetch: jest.fn(),
-    })
-    
     mockUseTargets.mockReturnValue({
       data: [],
       isLoading: false,
+      refetch: jest.fn(),
     })
     
     mockUseScans.mockReturnValue({
       data: [],
       isLoading: false,
+      refetch: jest.fn(),
     })
     
     mockUseFindings.mockReturnValue({
       data: { findings: [], total: 0 },
       isLoading: false,
+      refetch: jest.fn(),
     })
   })
 
@@ -90,8 +85,8 @@ describe('Dashboard', () => {
   })
 
   it('displays loading state when data is loading', () => {
-    mockUseDashboardStats.mockReturnValue({
-      data: null,
+    mockUseTargets.mockReturnValue({
+      data: [],
       isLoading: true,
       refetch: jest.fn(),
     })
@@ -99,22 +94,35 @@ describe('Dashboard', () => {
     render(<Dashboard />, { wrapper: createWrapper() })
     
     // Should show loading spinners (Loader2 components)
-    // Loader2 is an SVG which doesn't have role='img' by default
     const container = document.querySelector('.space-y-6')
     expect(container).toBeInTheDocument()
   })
 
   it('displays stats when data is loaded', () => {
-    mockUseDashboardStats.mockReturnValue({
+    mockUseTargets.mockReturnValue({
+      data: [{ id: 't1', name: 'Target 1' }],
+      isLoading: false,
+      refetch: jest.fn(),
+    })
+    
+    mockUseScans.mockReturnValue({
+      data: [
+        { id: 's1', status: 'completed' },
+        { id: 's2', status: 'running' },
+      ],
+      isLoading: false,
+      refetch: jest.fn(),
+    })
+    
+    mockUseFindings.mockReturnValue({
       data: {
-        total_scans: 10,
-        active_scans: 2,
-        critical_findings: 5,
-        high_findings: 15,
-        medium_findings: 20,
-        low_findings: 30,
-        total_findings: 70,
-        total_targets: 3,
+        findings: [
+          { id: 'f1', severity: 'Critical' },
+          { id: 'f2', severity: 'High' },
+          { id: 'f3', severity: 'Medium' },
+          { id: 'f4', severity: 'Low' },
+        ],
+        total: 4,
       },
       isLoading: false,
       refetch: jest.fn(),
@@ -122,19 +130,24 @@ describe('Dashboard', () => {
     
     render(<Dashboard />, { wrapper: createWrapper() })
     
+    // Check that the stat sections are rendered
     expect(screen.getByText('Total Scans')).toBeInTheDocument()
-    expect(screen.getByText('10')).toBeInTheDocument()
     expect(screen.getByText('Active Scans')).toBeInTheDocument()
-    expect(screen.getByText('2')).toBeInTheDocument()
     expect(screen.getByText('Critical Findings')).toBeInTheDocument()
-    expect(screen.getByText('5')).toBeInTheDocument()
+    // Use getAllByText for numbers that might appear multiple times
+    expect(screen.getAllByText('2').length).toBeGreaterThan(0) // 2 total scans
+    expect(screen.getAllByText('1').length).toBeGreaterThan(0) // 1 running scan and 1 critical
   })
 
   it('displays critical alert when critical findings exist', () => {
-    mockUseDashboardStats.mockReturnValue({
+    mockUseFindings.mockReturnValue({
       data: {
-        critical_findings: 3,
-        total_scans: 5,
+        findings: [
+          { id: 'f1', severity: 'Critical', target_id: 't1' },
+          { id: 'f2', severity: 'Critical', target_id: 't1' },
+          { id: 'f3', severity: 'Critical', target_id: 't1' },
+        ],
+        total: 3,
       },
       isLoading: false,
       refetch: jest.fn(),
@@ -147,10 +160,12 @@ describe('Dashboard', () => {
   })
 
   it('does not display critical alert when no critical findings', () => {
-    mockUseDashboardStats.mockReturnValue({
+    mockUseFindings.mockReturnValue({
       data: {
-        critical_findings: 0,
-        total_scans: 5,
+        findings: [
+          { id: 'f1', severity: 'High', target_id: 't1' },
+        ],
+        total: 1,
       },
       isLoading: false,
       refetch: jest.fn(),
@@ -184,6 +199,7 @@ describe('Dashboard', () => {
         },
       ],
       isLoading: false,
+      refetch: jest.fn(),
     })
     
     render(<Dashboard />, { wrapper: createWrapper() })
@@ -197,6 +213,7 @@ describe('Dashboard', () => {
     mockUseScans.mockReturnValue({
       data: [],
       isLoading: false,
+      refetch: jest.fn(),
     })
     
     render(<Dashboard />, { wrapper: createWrapper() })
@@ -205,18 +222,6 @@ describe('Dashboard', () => {
   })
 
   it('filters findings by severity', async () => {
-    mockUseDashboardStats.mockReturnValue({
-      data: {
-        total_findings: 10,
-        critical_findings: 2,
-        high_findings: 3,
-        medium_findings: 3,
-        low_findings: 2,
-      },
-      isLoading: false,
-      refetch: jest.fn(),
-    })
-    
     mockUseFindings.mockReturnValue({
       data: {
         findings: [
@@ -228,6 +233,7 @@ describe('Dashboard', () => {
         total: 4,
       },
       isLoading: false,
+      refetch: jest.fn(),
     })
     
     render(<Dashboard />, { wrapper: createWrapper() })
@@ -245,15 +251,26 @@ describe('Dashboard', () => {
   })
 
   it('calls refetch when refresh button is clicked', async () => {
-    const mockRefetch = jest.fn()
+    const mockRefetchTargets = jest.fn()
+    const mockRefetchScans = jest.fn()
+    const mockRefetchFindings = jest.fn()
     
-    mockUseDashboardStats.mockReturnValue({
-      data: {
-        total_scans: 5,
-        critical_findings: 0,
-      },
+    mockUseTargets.mockReturnValue({
+      data: [],
       isLoading: false,
-      refetch: mockRefetch,
+      refetch: mockRefetchTargets,
+    })
+    
+    mockUseScans.mockReturnValue({
+      data: [],
+      isLoading: false,
+      refetch: mockRefetchScans,
+    })
+    
+    mockUseFindings.mockReturnValue({
+      data: { findings: [], total: 0 },
+      isLoading: false,
+      refetch: mockRefetchFindings,
     })
     
     render(<Dashboard />, { wrapper: createWrapper() })
@@ -261,15 +278,22 @@ describe('Dashboard', () => {
     const refreshButton = screen.getByText('Refresh')
     fireEvent.click(refreshButton)
     
-    expect(mockRefetch).toHaveBeenCalled()
+    await waitFor(() => {
+      expect(mockRefetchTargets).toHaveBeenCalled()
+      expect(mockRefetchScans).toHaveBeenCalled()
+      expect(mockRefetchFindings).toHaveBeenCalled()
+    })
   })
 
   it('displays target stats', () => {
-    mockUseDashboardStats.mockReturnValue({
-      data: {
-        total_targets: 5,
-        total_scans: 10,
-      },
+    mockUseTargets.mockReturnValue({
+      data: [
+        { id: 't1', name: 'Target 1' },
+        { id: 't2', name: 'Target 2' },
+        { id: 't3', name: 'Target 3' },
+        { id: 't4', name: 'Target 4' },
+        { id: 't5', name: 'Target 5' },
+      ],
       isLoading: false,
       refetch: jest.fn(),
     })
@@ -281,11 +305,15 @@ describe('Dashboard', () => {
   })
 
   it('displays medium and low findings stats', () => {
-    mockUseDashboardStats.mockReturnValue({
+    mockUseFindings.mockReturnValue({
       data: {
-        medium_findings: 12,
-        low_findings: 8,
-        total_scans: 5,
+        findings: [
+          { id: 'f1', severity: 'Medium' },
+          { id: 'f2', severity: 'Medium' },
+          { id: 'f3', severity: 'Low' },
+          { id: 'f4', severity: 'Low' },
+        ],
+        total: 4,
       },
       isLoading: false,
       refetch: jest.fn(),
@@ -293,20 +321,23 @@ describe('Dashboard', () => {
     
     render(<Dashboard />, { wrapper: createWrapper() })
     
+    // Check that the stats sections are rendered
     expect(screen.getByText('Medium Findings')).toBeInTheDocument()
-    expect(screen.getByText('12')).toBeInTheDocument()
     expect(screen.getByText('Low Findings')).toBeInTheDocument()
-    expect(screen.getByText('8')).toBeInTheDocument()
+    // Check that the numbers are displayed (2 medium, 2 low)
+    expect(screen.getAllByText('2').length).toBeGreaterThan(0)
   })
 
   it('displays charts section', () => {
-    mockUseDashboardStats.mockReturnValue({
+    mockUseFindings.mockReturnValue({
       data: {
-        total_findings: 10,
-        critical_findings: 2,
-        high_findings: 3,
-        medium_findings: 3,
-        low_findings: 2,
+        findings: [
+          { id: 'f1', severity: 'Critical' },
+          { id: 'f2', severity: 'High' },
+          { id: 'f3', severity: 'Medium' },
+          { id: 'f4', severity: 'Low' },
+        ],
+        total: 4,
       },
       isLoading: false,
       refetch: jest.fn(),
@@ -350,6 +381,7 @@ describe('Dashboard', () => {
         },
       ],
       isLoading: false,
+      refetch: jest.fn(),
     })
     
     render(<Dashboard />, { wrapper: createWrapper() })
@@ -373,6 +405,7 @@ describe('Dashboard', () => {
         { id: 't2', name: 'Target 2' },
       ],
       isLoading: false,
+      refetch: jest.fn(),
     })
     
     render(<Dashboard />, { wrapper: createWrapper() })

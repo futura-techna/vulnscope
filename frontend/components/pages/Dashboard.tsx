@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import { 
   Scan, AlertTriangle, CheckCircle, Clock, 
@@ -18,7 +18,7 @@ const ResponsiveContainer = dynamic(() => import('recharts').then(mod => mod.Res
 const LineChart = dynamic(() => import('recharts').then(mod => mod.LineChart), { ssr: false })
 const Line = dynamic(() => import('recharts').then(mod => mod.Line), { ssr: false })
 import { cn, formatDate, getSeverityColor } from '@/lib/utils'
-import { useDashboardStats, useTargets, useScans, useFindings } from '@/lib/hooks/useApi'
+import { useTargets, useScans, useFindings } from '@/lib/hooks/useApi'
 
 interface StatCardProps {
   title: string
@@ -66,16 +66,42 @@ export function Dashboard() {
   const [selectedSeverities, setSelectedSeverities] = useState<string[]>(['Critical', 'High', 'Medium', 'Low'])
   const [isRefreshing, setIsRefreshing] = useState(false)
 
-  // Fetch data using React Query hooks
-  const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useDashboardStats()
-  const { data: targets, isLoading: targetsLoading } = useTargets()
-  const { data: scans, isLoading: scansLoading } = useScans()
-  const { data: findingsData, isLoading: findingsLoading } = useFindings({ limit: 100 })
+  // Fetch data using React Query hooks - only fetch once per data type
+  const { data: targets, isLoading: targetsLoading, refetch: refetchTargets } = useTargets()
+  const { data: scans, isLoading: scansLoading, refetch: refetchScans } = useScans()
+  const { data: findingsData, isLoading: findingsLoading, refetch: refetchFindings } = useFindings({ limit: 100 })
 
-  // Handle manual refresh
+  // Compute stats from already-fetched data instead of making additional API calls
+  const stats = useMemo(() => {
+    const activeScans = scans?.filter(s => s.status === 'running' || s.status === 'pending').length || 0
+    const criticalFindings = findingsData?.findings.filter(f => f.severity === 'Critical').length || 0
+    const highFindings = findingsData?.findings.filter(f => f.severity === 'High').length || 0
+    const mediumFindings = findingsData?.findings.filter(f => f.severity === 'Medium').length || 0
+    const lowFindings = findingsData?.findings.filter(f => f.severity === 'Low').length || 0
+    
+    return {
+      total_scans: scans?.length || 0,
+      active_scans: activeScans,
+      total_findings: findingsData?.total || 0,
+      critical_findings: criticalFindings,
+      high_findings: highFindings,
+      medium_findings: mediumFindings,
+      low_findings: lowFindings,
+      total_targets: targets?.length || 0,
+      scans_change: 0,
+      critical_change: 0,
+      high_change: 0,
+    }
+  }, [scans, findingsData, targets])
+
+  // Handle manual refresh - refetch all data
   const handleRefresh = async () => {
     setIsRefreshing(true)
-    await refetchStats()
+    await Promise.all([
+      refetchTargets(),
+      refetchScans(),
+      refetchFindings()
+    ])
     setTimeout(() => setIsRefreshing(false), 500)
   }
 
@@ -118,7 +144,10 @@ export function Dashboard() {
   // Get recent scans (last 5)
   const recentScans = scans?.slice(0, 5) || []
 
-  const isLoading = statsLoading || targetsLoading || scansLoading || findingsLoading
+  const isLoading = targetsLoading || scansLoading || findingsLoading
+  
+  // For stat cards, only consider the relevant loading states
+  const statsLoading = targetsLoading || scansLoading || findingsLoading
 
   return (
     <div className="space-y-6">

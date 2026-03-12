@@ -89,12 +89,25 @@ export function useDeleteTarget() {
 // ============ Scans Hooks ============
 
 export function useScans(params?: { target_id?: string; status?: string }) {
+  // Memoize params to avoid unnecessary re-renders
+  const memoizedParams = React.useMemo(() => params, [
+    params?.target_id,
+    params?.status
+  ])
+  
   return useQuery({
-    queryKey: [...queryKeys.scans, params],
-    queryFn: () => api.getScans(params),
-    staleTime: 10000, // 10 seconds - more frequent updates for scans
-    refetchInterval: 5000, // Auto-refetch every 5 seconds for active scans
-    refetchIntervalInBackground: true, // Continue refetching when tab is in background
+    queryKey: [...queryKeys.scans, memoizedParams],
+    queryFn: () => api.getScans(memoizedParams),
+    staleTime: 30000, // 30 seconds - data is fresh for 30 seconds
+    refetchInterval: (query) => {
+      // Only refetch frequently if there are active scans
+      const data = query.state.data as Scan[] | undefined
+      if (data && data.some(s => s.status === 'running' || s.status === 'pending')) {
+        return 10000 // 10 seconds when active scans exist
+      }
+      return 60000 // 60 seconds otherwise
+    },
+    refetchIntervalInBackground: false, // Don't refetch in background to reduce load
   })
 }
 
@@ -102,10 +115,16 @@ export function useScans(params?: { target_id?: string; status?: string }) {
 export function useScansWithInvalidation(params?: { target_id?: string; status?: string }) {
   const queryClient = useQueryClient()
   
+  // Memoize params to avoid unnecessary re-renders
+  const memoizedParams = React.useMemo(() => params, [
+    params?.target_id,
+    params?.status
+  ])
+  
   return useQuery({
-    queryKey: [...queryKeys.scans, params],
+    queryKey: [...queryKeys.scans, memoizedParams],
     queryFn: async () => {
-      const scans = await api.getScans(params)
+      const scans = await api.getScans(memoizedParams)
       
       // Check if any scan recently completed - if so, invalidate related caches
       const hasCompletedScans = scans.some(s => s.status === 'completed')
@@ -119,9 +138,16 @@ export function useScansWithInvalidation(params?: { target_id?: string; status?:
       
       return scans
     },
-    staleTime: 10000,
-    refetchInterval: 5000,
-    refetchIntervalInBackground: true,
+    staleTime: 30000,
+    refetchInterval: (query) => {
+      // Only refetch frequently if there are active scans
+      const data = query.state.data as Scan[] | undefined
+      if (data && data.some(s => s.status === 'running' || s.status === 'pending')) {
+        return 10000 // 10 seconds when active scans exist
+      }
+      return 60000 // 60 seconds otherwise
+    },
+    refetchIntervalInBackground: false,
   })
 }
 
@@ -197,11 +223,22 @@ export function useFindings(params?: {
   skip?: number
   limit?: number
 }) {
+  // Memoize params to avoid unnecessary re-renders
+  const memoizedParams = React.useMemo(() => params, [
+    params?.scan_id,
+    params?.target_id,
+    params?.severity,
+    params?.vuln_type,
+    params?.status,
+    params?.skip,
+    params?.limit
+  ])
+  
   return useQuery({
-    queryKey: [...queryKeys.findings, params],
-    queryFn: () => api.getFindings(params),
-    staleTime: 10000, // 10 seconds - more frequent updates
-    refetchInterval: 30000, // Auto-refresh every 30 seconds
+    queryKey: [...queryKeys.findings, memoizedParams],
+    queryFn: () => api.getFindings(memoizedParams),
+    staleTime: 30000, // 30 seconds
+    refetchInterval: 60000, // Auto-refresh every minute instead of 30 seconds
   })
 }
 
@@ -293,8 +330,7 @@ export function useCompliance() {
         ]
       }
     },
-    staleTime: 30000, // 30 seconds - more frequent updates
-    refetchInterval: 60000, // Auto-refresh every minute
+    staleTime: 60000, // 1 minute - compliance data doesn't change frequently
   })
 }
 
@@ -324,8 +360,7 @@ export function useComplianceCategories() {
         ]
       }
     },
-    staleTime: 30000,
-    refetchInterval: 60000,
+    staleTime: 60000, // 1 minute
   })
 }
 
