@@ -873,9 +873,12 @@ _settings_store: Dict[str, Any] = {
 
 
 @router.get("/settings", tags=["settings"])
-async def get_settings():
+async def get_settings_endpoint():
     """Get application settings"""
     settings = get_settings()
+    # Handle case where get_settings is async
+    if hasattr(settings, '__await__'):
+        settings = await settings
     return {
         **_settings_store,
         "app_name": settings.app_name,

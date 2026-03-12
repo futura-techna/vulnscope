@@ -74,6 +74,13 @@ class TargetModel(Base):
 
     # Relationships
     scans = relationship("ScanModel", back_populates="target", cascade="all, delete-orphan")
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.tags is None:
+            self.tags = []
+        if self.auth_config is None:
+            self.auth_config = {}
 
 
 class ScanModel(Base):
@@ -108,6 +115,29 @@ class ScanModel(Base):
     # Relationships
     target = relationship("TargetModel", back_populates="scans")
     findings = relationship("FindingModel", back_populates="scan", cascade="all, delete-orphan")
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.scan_type is None:
+            self.scan_type = "full"
+        if self.status is None:
+            self.status = "pending"
+        if self.progress is None:
+            self.progress = 0
+        if self.enable_crawler is None:
+            self.enable_crawler = True
+        if self.enable_openapi_import is None:
+            self.enable_openapi_import = True
+        if self.enable_graphql_import is None:
+            self.enable_graphql_import = True
+        if self.enable_dast is None:
+            self.enable_dast = True
+        if self.enable_fuzzer is None:
+            self.enable_fuzzer = True
+        if self.endpoints_discovered is None:
+            self.endpoints_discovered = 0
+        if self.findings_count is None:
+            self.findings_count = 0
 
 
 class FindingModel(Base):
@@ -148,6 +178,15 @@ class FindingModel(Base):
 
     # Relationships
     scan = relationship("ScanModel", back_populates="findings")
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.status is None:
+            self.status = "Open"
+        if self.false_positive is None:
+            self.false_positive = False
+        if self.verified is None:
+            self.verified = False
 
 
 class ReportModel(Base):
@@ -160,6 +199,11 @@ class ReportModel(Base):
     format = Column(String(20), default="json")
     size = Column(String(50), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.format is None:
+            self.format = "json"
 
 
 class SettingsModel(Base):

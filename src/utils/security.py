@@ -11,6 +11,14 @@ from dataclasses import dataclass
 from threading import Lock
 import ipaddress
 
+# Try to import psutil for resource monitoring
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    psutil = None
+    PSUTIL_AVAILABLE = False
+
 
 @dataclass
 class ScanLimits:
@@ -205,7 +213,14 @@ class SandboxEnvironment:
     
     def check_resources(self) -> Dict[str, Any]:
         """Check resource usage"""
-        import psutil
+        if not PSUTIL_AVAILABLE or psutil is None:
+            return {
+                'memory_mb': 0,
+                'memory_limit_mb': self.max_memory_mb,
+                'within_limits': True,
+                'error': 'psutil not available'
+            }
+        
         process = psutil.Process()
         
         memory_mb = process.memory_info().rss / 1024 / 1024

@@ -47,13 +47,12 @@ class OpenAPIImporter:
             if 'servers' in self.spec and self.spec['servers']:
                 return self.spec['servers'][0].get('url', str(target.url))
             
-            # Try to construct from info
-            if 'info' in self.spec:
-                host = self.spec.get('host', '')
-                base_path = self.spec.get('basePath', '/')
-                schemes = self.spec.get('schemes', ['https'])
-                if host:
-                    return f"{schemes[0]}://{host}{base_path}"
+            # Swagger 2.0
+            host = self.spec.get('host', '')
+            base_path = self.spec.get('basePath', '/')
+            schemes = self.spec.get('schemes', ['https'])
+            if host:
+                return f"{schemes[0]}://{host}{base_path}"
         
         return str(target.url)
     

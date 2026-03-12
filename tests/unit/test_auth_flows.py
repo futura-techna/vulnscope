@@ -340,7 +340,8 @@ class TestAuthenticationErrors:
     
     @patch('requests.Session.get')
     def test_connection_error(self, mock_get):
-        mock_get.side_effect = Exception("Connection refused")
+        import requests
+        mock_get.side_effect = requests.RequestException("Connection refused")
         
         handler = AuthHandler()
         result = handler.authenticate_basic(

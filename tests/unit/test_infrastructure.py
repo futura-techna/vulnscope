@@ -211,12 +211,16 @@ class TestMessageQueue:
     def test_enqueue_with_priority(self):
         """Test enqueueing with priority"""
         mock_redis = Mock()
-        
+
         queue = MessageQueue(redis_client=mock_redis)
         queue.enqueue("scan", {"target": "http://example.com"}, priority=10)
-        
+
         call_args = mock_redis.zadd.call_args
-        task_data = json.loads(list(call_args[0][0].keys())[0])
+        # zadd is called with (queue_name, {json_task: priority})
+        # call_args[0][0] is queue_name, call_args[0][1] is the dict
+        task_dict = call_args[0][1]
+        task_json = list(task_dict.keys())[0]
+        task_data = json.loads(task_json)
         assert task_data["priority"] == 10
     
     def test_enqueue_scan(self):

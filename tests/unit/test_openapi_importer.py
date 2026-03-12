@@ -7,8 +7,8 @@ import pytest
 from unittest.mock import Mock, patch
 from uuid import uuid4
 
-from src.discovery.openapi_importer import OpenAPIImporter
-from src.core.models import Endpoint
+from src.discovery.openapi_importer import OpenAPIImporter, OpenAPIImportResult
+from src.core.models import Target
 
 
 class TestOpenAPIImporter:
@@ -17,8 +17,11 @@ class TestOpenAPIImporter:
     def test_initialization(self):
         importer = OpenAPIImporter()
         assert importer is not None
+        assert importer.spec is None
+        assert importer.base_url == ""
     
-    def test_parse_openapi_v3(self):
+    def test_import_from_dict_v3(self):
+        """Test importing OpenAPI v3 spec from dict"""
         importer = OpenAPIImporter()
         
         spec = {
@@ -57,11 +60,14 @@ class TestOpenAPIImporter:
             }
         }
         
-        endpoints = importer.parse_spec(spec)
+        target = Target(id=uuid4(), name="Test", url="http://example.com")
+        result = importer.import_from_dict(spec, target)
         
-        assert len(endpoints) == 3
+        assert isinstance(result, OpenAPIImportResult)
+        assert len(result.endpoints) == 3
     
-    def test_parse_openapi_v2(self):
+    def test_import_from_dict_v2(self):
+        """Test importing Swagger v2 spec from dict"""
         importer = OpenAPIImporter()
         
         spec = {
@@ -70,6 +76,8 @@ class TestOpenAPIImporter:
                 "title": "Test API",
                 "version": "1.0.0"
             },
+            "host": "api.example.com",
+            "basePath": "/v1",
             "paths": {
                 "/products": {
                     "get": {
@@ -80,99 +88,17 @@ class TestOpenAPIImporter:
             }
         }
         
-        endpoints = importer.parse_spec(spec)
+        target = Target(id=uuid4(), name="Test", url="http://example.com")
+        result = importer.import_from_dict(spec, target)
         
-        assert len(endpoints) == 1
+        assert isinstance(result, OpenAPIImportResult)
+        assert len(result.endpoints) == 1
     
-    def test_extract_parameters(self):
+    def test_extract_security_schemes_v3(self):
+        """Test extracting security schemes from OpenAPI v3"""
         importer = OpenAPIImporter()
         
-        operation = {
-            "parameters": [
-                {"name": "limit", "in": "query", "type": "integer"},
-                {"name": "offset", "in": "query", "type": "integer"},
-                {"name": "id", "in": "path", "type": "string"}
-            ]
-        }
-        
-        params = importer.extract_parameters(operation)
-        
-        assert len(params) == 3
-    
-    def test_extract_request_body(self):
-        importer = OpenAPIImporter()
-        
-        operation = {
-            "requestBody": {
-                "content": {
-                    "application/json": {
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "name": {"type": "string"},
-                                "email": {"type": "string"}
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        body = importer.extract_request_body(operation)
-        
-        assert body is not None
-    
-    def test_import_from_url(self):
-        importer = OpenAPIImporter()
-        
-        with patch.object(importer, 'fetch_spec') as mock_fetch:
-            mock_fetch.return_value = {
-                "openapi": "3.0.0",
-                "paths": {
-                    "/api/test": {
-                        "get": {"responses": {"200": {"description": "OK"}}}
-                    }
-                }
-            }
-            
-            endpoints = importer.import_from_url("http://example.com/openapi.json")
-            
-            assert isinstance(endpoints, list)
-    
-    def test_import_from_file(self):
-        importer = OpenAPIImporter()
-        
-        with patch.object(importer, 'load_file') as mock_load:
-            mock_load.return_value = {
-                "openapi": "3.0.0",
-                "paths": {
-                    "/api/test": {
-                        "get": {"responses": {"200": {"description": "OK"}}}
-                    }
-                }
-            }
-            
-            endpoints = importer.import_from_file("/path/to/openapi.json")
-            
-            assert isinstance(endpoints, list)
-    
-    def test_create_endpoints(self):
-        importer = OpenAPIImporter()
-        target_id = uuid4()
-        
-        paths = {
-            "/users": {"get": {}, "post": {}},
-            "/products": {"get": {}}
-        }
-        
-        endpoints = importer.create_endpoints(paths, target_id, "http://example.com")
-        
-        assert len(endpoints) == 3
-    
-    def test_handle_security_schemes(self):
-        importer = OpenAPIImporter()
-        
-        spec = {
+        importer.spec = {
             "openapi": "3.0.0",
             "components": {
                 "securitySchemes": {
@@ -189,61 +115,207 @@ class TestOpenAPIImporter:
             }
         }
         
-        security = importer.extract_security_schemes(spec)
+        security = importer._extract_security_schemes()
         
         assert len(security) == 2
+        assert "bearerAuth" in security
+        assert "apiKey" in security
     
-    def test_extract_base_url(self):
+    def test_extract_security_schemes_v2(self):
+        """Test extracting security schemes from Swagger v2"""
         importer = OpenAPIImporter()
         
-        spec = {
+        importer.spec = {
+            "swagger": "2.0",
+            "securityDefinitions": {
+                "basic": {
+                    "type": "basic"
+                }
+            }
+        }
+        
+        security = importer._extract_security_schemes()
+        
+        assert len(security) == 1
+        assert "basic" in security
+    
+    def test_extract_schemas_v3(self):
+        """Test extracting schemas from OpenAPI v3"""
+        importer = OpenAPIImporter()
+        
+        importer.spec = {
+            "openapi": "3.0.0",
+            "components": {
+                "schemas": {
+                    "User": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string"},
+                            "name": {"type": "string"}
+                        }
+                    }
+                }
+            }
+        }
+        
+        schemas = importer._extract_schemas()
+        
+        assert "User" in schemas
+    
+    def test_extract_schemas_v2(self):
+        """Test extracting schemas from Swagger v2"""
+        importer = OpenAPIImporter()
+        
+        importer.spec = {
+            "swagger": "2.0",
+            "definitions": {
+                "Product": {
+                    "type": "object"
+                }
+            }
+        }
+        
+        schemas = importer._extract_schemas()
+        
+        assert "Product" in schemas
+    
+    def test_get_base_url_from_servers(self):
+        """Test getting base URL from servers (OpenAPI v3)"""
+        importer = OpenAPIImporter()
+        
+        importer.spec = {
             "openapi": "3.0.0",
             "servers": [
                 {"url": "https://api.example.com/v1"}
             ]
         }
         
-        base_url = importer.extract_base_url(spec)
+        target = Target(id=uuid4(), name="Test", url="http://example.com")
+        base_url = importer._get_base_url(target)
         
         assert base_url == "https://api.example.com/v1"
     
-    def test_extract_base_url_v2(self):
+    def test_get_base_url_from_host(self):
+        """Test getting base URL from host (Swagger v2)"""
         importer = OpenAPIImporter()
         
-        spec = {
+        importer.spec = {
             "swagger": "2.0",
             "host": "api.example.com",
             "basePath": "/v1",
             "schemes": ["https"]
         }
         
-        base_url = importer.extract_base_url(spec)
+        target = Target(id=uuid4(), name="Test", url="http://example.com")
+        base_url = importer._get_base_url(target)
         
         assert base_url == "https://api.example.com/v1"
     
-    def test_parse_path_parameters(self):
+    def test_get_base_url_fallback(self):
+        """Test base URL fallback to target URL"""
         importer = OpenAPIImporter()
         
-        path_item = {
+        importer.spec = {"openapi": "3.0.0"}  # No servers defined
+        
+        target = Target(id=uuid4(), name="Test", url="http://fallback.example.com")
+        base_url = importer._get_base_url(target)
+        
+        # Falls back to target URL since no servers defined
+        # Note: Target URL normalizes to include trailing slash
+        assert base_url == "http://fallback.example.com/"
+    
+    def test_parse_path(self):
+        """Test parsing a single path"""
+        importer = OpenAPIImporter()
+        
+        path = "/users"
+        methods = {
             "get": {
+                "summary": "List users",
                 "parameters": [
-                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string"}},
-                    {"name": "format", "in": "query", "schema": {"type": "string"}}
-                ]
+                    {"name": "limit", "in": "query", "schema": {"type": "integer"}}
+                ],
+                "responses": {"200": {"description": "OK"}}
+            },
+            "post": {
+                "summary": "Create user",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {"type": "object"}
+                        }
+                    }
+                },
+                "responses": {"201": {"description": "Created"}}
             }
         }
         
-        params = importer.parse_path_parameters(path_item)
+        target_id = uuid4()
+        endpoints = importer._parse_path(path, methods, str(target_id), "http://example.com")
         
-        assert len(params) == 2
+        assert len(endpoints) == 2
+        assert all(e.path == "/users" for e in endpoints)
+        methods_found = [e.method for e in endpoints]
+        assert "GET" in methods_found
+        assert "POST" in methods_found
+    
+    @patch('requests.get')
+    def test_import_from_url(self, mock_get):
+        """Test importing from URL"""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "openapi": "3.0.0",
+            "paths": {
+                "/api/test": {
+                    "get": {"responses": {"200": {"description": "OK"}}}
+                }
+            }
+        }
+        mock_get.return_value = mock_response
+        
+        importer = OpenAPIImporter()
+        target = Target(id=uuid4(), name="Test", url="http://example.com")
+        
+        result = importer.import_from_url("http://example.com/openapi.json", target)
+        
+        assert isinstance(result, OpenAPIImportResult)
+        assert len(result.endpoints) == 1
+
+
+class TestOpenAPIImportResult:
+    """Test OpenAPIImportResult dataclass"""
+    
+    def test_default_values(self):
+        """Test default values for import result"""
+        result = OpenAPIImportResult()
+        
+        assert result.endpoints == []
+        assert result.schemas == {}
+        assert result.security_schemes == {}
+        assert result.base_url == ""
+    
+    def test_with_values(self):
+        """Test import result with values"""
+        result = OpenAPIImportResult(
+            endpoints=[Mock()],
+            schemas={'User': {'type': 'object'}},
+            security_schemes={'bearer': {'type': 'http'}},
+            base_url="http://example.com"
+        )
+        
+        assert len(result.endpoints) == 1
+        assert 'User' in result.schemas
+        assert 'bearer' in result.security_schemes
+        assert result.base_url == "http://example.com"
 
 
 class TestOpenAPIImportIntegration:
     """Integration tests for OpenAPI importer"""
     
     def test_full_spec_import(self):
+        """Test full spec import with multiple endpoints"""
         importer = OpenAPIImporter()
-        target_id = uuid4()
         
         full_spec = {
             "openapi": "3.0.0",
@@ -323,10 +395,13 @@ class TestOpenAPIImportIntegration:
             }
         }
         
-        endpoints = importer.parse_spec(full_spec, target_id)
+        target = Target(id=uuid4(), name="Test", url="http://example.com")
+        result = importer.import_from_dict(full_spec, target)
         
         # Should have 5 endpoints: GET /users, POST /users, GET /users/{id}, PUT /users/{id}, DELETE /users/{id}
-        assert len(endpoints) == 5
+        assert len(result.endpoints) == 5
+        assert result.base_url == "https://api.example.com/v1"
+        assert "bearerAuth" in result.security_schemes
 
 
 if __name__ == "__main__":

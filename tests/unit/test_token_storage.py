@@ -287,7 +287,7 @@ class TestTokenStorageRedis:
 class TestGetTokenStorage:
     """Test get_token_storage singleton function"""
     
-    @patch('src.utils.token_storage.get_settings')
+    @patch('src.config.settings.get_settings')
     def test_get_token_storage_singleton(self, mock_settings):
         """Test that get_token_storage returns singleton"""
         mock_settings.return_value = MagicMock(

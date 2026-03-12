@@ -189,6 +189,7 @@ class Crawler:
         parsed = urlparse(url)
         
         return Endpoint(
+            target_id=self.target.id if self.target else None,
             url=url,
             method=method,
             path=parsed.path,

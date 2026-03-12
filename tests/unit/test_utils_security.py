@@ -280,32 +280,30 @@ class TestSandboxEnvironment:
         result = sandbox.execute_safe(greet_func, "World", greeting="Hi")
         assert result == "Hi, World!"
     
-    @patch('src.utils.security.psutil.Process')
-    def test_check_resources(self, mock_process_class):
+    @patch('src.utils.security.PSUTIL_AVAILABLE', True)
+    @patch('src.utils.security.psutil')
+    def test_check_resources(self, mock_psutil):
         """Test resource checking"""
         mock_process = Mock()
         mock_process.memory_info.return_value = Mock(rss=256 * 1024 * 1024)  # 256 MB
-        mock_process_class.return_value = mock_process
+        mock_psutil.Process.return_value = mock_process
         
         sandbox = SandboxEnvironment(max_memory_mb=512)
-        
-        with patch('src.utils.security.psutil.Process', return_value=mock_process):
-            resources = sandbox.check_resources()
+        resources = sandbox.check_resources()
         
         assert resources['memory_limit_mb'] == 512
         assert resources['within_limits'] is True
     
-    @patch('src.utils.security.psutil.Process')
-    def test_check_resources_exceeded(self, mock_process_class):
+    @patch('src.utils.security.PSUTIL_AVAILABLE', True)
+    @patch('src.utils.security.psutil')
+    def test_check_resources_exceeded(self, mock_psutil):
         """Test resource limit exceeded"""
         mock_process = Mock()
         mock_process.memory_info.return_value = Mock(rss=1024 * 1024 * 1024)  # 1 GB
-        mock_process_class.return_value = mock_process
+        mock_psutil.Process.return_value = mock_process
         
         sandbox = SandboxEnvironment(max_memory_mb=512)
-        
-        with patch('src.utils.security.psutil.Process', return_value=mock_process):
-            resources = sandbox.check_resources()
+        resources = sandbox.check_resources()
         
         assert resources['within_limits'] is False
 

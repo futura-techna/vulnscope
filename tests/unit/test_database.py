@@ -477,7 +477,8 @@ class TestGetOrCreateSession:
         mock_engine = Mock()
         mock_get_engine.return_value = mock_engine
         
-        mock_maker = Mock()
+        mock_session = Mock()
+        mock_maker = Mock(return_value=mock_session)
         mock_sessionmaker.return_value = mock_maker
         
         import src.database as db_module
@@ -485,7 +486,9 @@ class TestGetOrCreateSession:
         
         result = await get_or_create_session()
         
-        assert result == mock_maker
+        # get_or_create_session returns the result of calling the session maker
+        assert result == mock_session
+        mock_maker.assert_called_once()
 
 
 class TestBaseModel:

@@ -276,7 +276,7 @@ class TestAsyncScanOptimizer:
         
         assert stats["completed_scans"] == 10
         assert stats["failed_scans"] == 2
-        assert stats["success_rate"] == 83.33  # 10/12 * 100
+        assert stats["success_rate"] == pytest.approx(83.33, rel=0.01)  # 10/12 * 100
     
     def test_get_stats_no_scans(self):
         """Test stats with no scans"""

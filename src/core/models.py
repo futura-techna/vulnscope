@@ -12,20 +12,20 @@ from uuid import UUID, uuid4
 
 class Severity(str, Enum):
     """Vulnerability severity levels"""
-    CRITICAL = "Critical"
-    HIGH = "High"
-    MEDIUM = "Medium"
-    LOW = "Low"
-    INFO = "Info"
+    CRITICAL = "CRITICAL"
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
+    INFO = "INFO"
 
 
 class Status(str, Enum):
     """Scan and finding status"""
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
 
 
 class VulnerabilityType(str, Enum):
@@ -47,6 +47,7 @@ class VulnerabilityType(str, Enum):
     BUFFER_OVERFLOW = "BUFFER_OVERFLOW"
     RATE_LIMITING = "RATE_LIMITING"
     CORS = "CORS"
+    INFO_LEAK = "INFO_LEAK"
 
 
 class Target(BaseModel):
@@ -71,7 +72,7 @@ class Target(BaseModel):
 class Endpoint(BaseModel):
     """API endpoint or web page discovered"""
     id: UUID = Field(default_factory=uuid4)
-    target_id: UUID
+    target_id: Optional[UUID] = None
     url: str
     method: str = "GET"  # GET, POST, PUT, DELETE, PATCH, etc.
     path: str
@@ -99,8 +100,8 @@ class Finding(BaseModel):
     endpoint_id: Optional[UUID] = None
     
     # Vulnerability details
-    vulnerability_type: str = "Unknown"  # SQL Injection, XSS, SSRF, etc.
-    severity: str = "Medium"  # Critical, High, Medium, Low, Info
+    vulnerability_type: VulnerabilityType = VulnerabilityType.XSS
+    severity: Severity = Severity.MEDIUM
     title: str
     description: Optional[str] = None
     
@@ -109,7 +110,7 @@ class Finding(BaseModel):
     method: Optional[str] = None
     parameter: Optional[str] = None
     payload: Optional[str] = None
-    evidence: Optional[str] = None
+    evidence: Dict[str, Any] = Field(default_factory=dict)
     
     # Remediation
     remediation: Optional[str] = None
@@ -119,11 +120,12 @@ class Finding(BaseModel):
     cvss_score: Optional[float] = None
     
     # Status
-    status: str = "Open"  # Open, In Progress, Resolved, False Positive
+    status: Status = Field(default=Status.PENDING)
     false_positive: bool = False
     verified: bool = False
     
     # Timestamps
+    discovered_at: datetime = Field(default_factory=datetime.utcnow)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     verified_at: Optional[datetime] = None
     remediated_at: Optional[datetime] = None

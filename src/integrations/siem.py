@@ -51,13 +51,23 @@ class SplunkIntegration(SIEMAdapter):
         if not all([self.url, self.token]):
             return {"error": "Missing Splunk configuration"}
         
+        # Handle timestamp - convert ISO format to epoch if needed
+        timestamp = event.get("timestamp", 0)
+        if isinstance(timestamp, str):
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                timestamp = int(dt.timestamp())
+            except (ValueError, TypeError):
+                timestamp = 0
+        
         # Build HEC event
         hec_event = {
             "host": "vulnscope",
             "source": "vulnscope",
             "sourcetype": "vulnscope:scan",
             "index": self.index,
-            "time": int(event.get("timestamp", 0)),
+            "time": timestamp,
             "event": event,
         }
         

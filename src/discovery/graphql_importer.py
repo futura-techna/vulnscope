@@ -139,11 +139,14 @@ class GraphQLImporter:
         queries = []
         mutations = []
         
-        if not self.schema or 'types' not in self.schema:
+        if not self.schema:
             return queries, mutations
         
         # Find query and mutation types
         schema_data = self.schema.get('__schema', {})
+        if not schema_data:
+            return queries, mutations
+            
         query_type = schema_data.get('queryType', {}).get('name', 'Query')
         mutation_type = schema_data.get('mutationType', {}).get('name', 'Mutation')
         
@@ -290,19 +293,21 @@ class GraphQLImporter:
         current_type = None
         
         for line in lines:
-            line = line.strip()
-            if line.startswith('type Query'):
+            stripped = line.strip()
+            if stripped.startswith('type Query'):
                 current_type = 'query'
-            elif line.startswith('type Mutation'):
+            elif stripped.startswith('type Mutation'):
                 current_type = 'mutation'
-            elif line.startswith('type '):
+            elif stripped.startswith('type '):
                 current_type = None
-            elif line.startswith('  ') and current_type and ':' in line:
-                field_name = line.split(':')[0].strip()
-                if current_type == 'query':
-                    queries.append(field_name)
-                elif current_type == 'mutation':
-                    mutations.append(field_name)
+            elif current_type and stripped and ':' in stripped and not stripped.startswith('#'):
+                # This is a field inside Query or Mutation type
+                field_name = stripped.split('(')[0].split(':')[0].strip()
+                if field_name and not field_name.startswith('}'):
+                    if current_type == 'query':
+                        queries.append(field_name)
+                    elif current_type == 'mutation':
+                        mutations.append(field_name)
         
         result.queries = queries
         result.mutations = mutations

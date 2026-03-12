@@ -142,6 +142,11 @@ class TokenStorage:
             
             return token_data
             
+        except (KeyError, ValueError) as e:
+            # Malformed token data - delete it and return None
+            logger.error(f"[TokenStorage] Failed to get token: {e}")
+            self.delete_token(token_type, token)
+            return None
         except Exception as e:
             logger.error(f"[TokenStorage] Failed to get token: {e}")
             return None
