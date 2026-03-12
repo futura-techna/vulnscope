@@ -109,6 +109,10 @@ class CrawlerConfig(BaseModel):
     respect_robots_txt: bool = Field(default=True)
     extract_forms: bool = Field(default=True)
     extract_api_endpoints: bool = Field(default=True)
+    follow_redirects: bool = Field(default=True)
+    user_agent: str = Field(default="VulnScope-Crawler/1.0")
+    allowed_domains: Optional[List[str]] = Field(default=None)
+    blocked_domains: Optional[List[str]] = Field(default=None)
 
 
 class FuzzerConfig(BaseModel):

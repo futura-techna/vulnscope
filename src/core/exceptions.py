@@ -6,7 +6,16 @@ Exception classes for error handling
 
 class VulnScopeError(Exception):
     """Base exception for VulnScope"""
-    pass
+    
+    def __init__(self, message: str = "", **kwargs):
+        super().__init__(message)
+        self.message = message
+        # Store any additional keyword arguments
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+    
+    def __str__(self):
+        return self.message or super().__str__()
 
 
 class ScanError(VulnScopeError):

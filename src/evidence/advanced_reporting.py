@@ -14,6 +14,13 @@ from collections import defaultdict
 from ..core.models import Finding, Scan, Target, Severity
 
 
+def get_enum_value(value):
+    """Helper to get value from enum or return string directly"""
+    if hasattr(value, 'value'):
+        return value.value
+    return value
+
+
 # PDF Export using reportlab
 try:
     from reportlab.lib import colors
@@ -372,7 +379,7 @@ class VulnerabilityCorrelator:
             (["SSRF", "COMMAND_INJECTION"], "rce_chain"),
         ]
         
-        vuln_types = {f.vulnerability_type.value for f in findings}
+        vuln_types = {get_enum_value(f.vulnerability_type) for f in findings}
         
         for pattern, chain_name in chain_patterns:
             if all(vt in vuln_types for vt in pattern):
@@ -513,8 +520,8 @@ class ExecutiveReportGenerator:
         return [
             {
                 "title": f.title,
-                "severity": f.severity.value,
-                "type": f.vulnerability_type.value,
+                "severity": get_enum_value(f.severity),
+                "type": get_enum_value(f.vulnerability_type),
                 "cwe": f.cwe_id
             }
             for f in sorted_findings[:limit]

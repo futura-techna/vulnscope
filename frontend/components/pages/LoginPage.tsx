@@ -135,6 +135,7 @@ export function LoginPage({ onRegister, onForgotPassword }: LoginPageProps) {
           <button
             type="submit"
             disabled={loading}
+            data-testid="login-submit-button"
             className="w-full py-3 px-4 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? 'Signing in...' : 'Sign in with email/password'}

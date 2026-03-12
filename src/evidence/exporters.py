@@ -15,6 +15,13 @@ from io import StringIO
 from ..core.models import Finding, Scan, Target, Severity, Report
 
 
+def get_enum_value(value):
+    """Helper to get value from enum or return string directly"""
+    if hasattr(value, 'value'):
+        return value.value
+    return value
+
+
 class Exporter(ABC):
     """Base class for exporters"""
     
@@ -88,9 +95,9 @@ class JSONExporter(Exporter):
                     "id": str(f.id),
                     "title": f.title,
                     "description": f.description,
-                    "severity": f.severity.value,
-                    "vulnerability_type": f.vulnerability_type.value,
-                    "status": f.status.value,
+                    "severity": get_enum_value(f.severity),
+                    "vulnerability_type": get_enum_value(f.vulnerability_type),
+                    "status": get_enum_value(f.status),
                     "cwe_id": f.cwe_id,
                     "cve_id": f.cve_id,
                     "remediation": f.remediation,
@@ -145,8 +152,8 @@ class XMLExporter(Exporter):
             ET.SubElement(finding_elem, "id").text = str(finding.id)
             ET.SubElement(finding_elem, "title").text = finding.title
             ET.SubElement(finding_elem, "description").text = finding.description
-            ET.SubElement(finding_elem, "severity").text = finding.severity.value
-            ET.SubElement(finding_elem, "type").text = finding.vulnerability_type.value
+            ET.SubElement(finding_elem, "severity").text = get_enum_value(finding.severity)
+            ET.SubElement(finding_elem, "type").text = get_enum_value(finding.vulnerability_type)
             ET.SubElement(finding_elem, "cwe_id").text = finding.cwe_id or ""
             ET.SubElement(finding_elem, "cve_id").text = finding.cve_id or ""
             ET.SubElement(finding_elem, "remediation").text = finding.remediation or ""
@@ -367,14 +374,14 @@ class HTMLExporter(Exporter):
         
         # Add findings
         for finding in findings:
-            severity_class = finding.severity.value.lower()
+            severity_class = get_enum_value(finding.severity).lower()
             html += f"""
         <div class="finding {severity_class}">
             <div class="finding-header">
                 <span class="finding-title">{finding.title}</span>
-                <span class="severity-badge {severity_class}">{finding.severity.value}</span>
+                <span class="severity-badge {severity_class}">{get_enum_value(finding.severity)}</span>
             </div>
-            <p><strong>Type:</strong> {finding.vulnerability_type.value}</p>
+            <p><strong>Type:</strong> {get_enum_value(finding.vulnerability_type)}</p>
             <p>{finding.description}</p>
 """
             if finding.evidence:
@@ -430,7 +437,7 @@ class SARIFExporter(Exporter):
                     },
                     "results": [
                         {
-                            "ruleId": f.vulnerability_type.value,
+                            "ruleId": get_enum_value(f.vulnerability_type),
                             "ruleIndex": i,
                             "level": self._map_severity_to_sarif_level(f.severity),
                             "message": {
@@ -491,9 +498,9 @@ class CSVExporter(Exporter):
                 str(finding.id),
                 finding.title,
                 finding.description.replace('\n', ' '),
-                finding.severity.value,
-                finding.vulnerability_type.value,
-                finding.status.value,
+                get_enum_value(finding.severity),
+                get_enum_value(finding.vulnerability_type),
+                get_enum_value(finding.status),
                 finding.cwe_id or "",
                 finding.cve_id or "",
                 finding.remediation or "",
@@ -583,8 +590,8 @@ class PDFExporter(Exporter):
                 # Findings
                 story.append(Paragraph("Findings", styles['Heading2']))
                 for finding in findings:
-                    story.append(Paragraph(f"<b>{finding.title}</b> [{finding.severity.value}]", styles['Heading3']))
-                    story.append(Paragraph(f"<b>Type:</b> {finding.vulnerability_type.value}", styles['Normal']))
+                    story.append(Paragraph(f"<b>{finding.title}</b> [{get_enum_value(finding.severity)}]", styles['Heading3']))
+                    story.append(Paragraph(f"<b>Type:</b> {get_enum_value(finding.vulnerability_type)}", styles['Normal']))
                     if finding.description:
                         story.append(Paragraph(f"<b>Description:</b> {finding.description}", styles['Normal']))
                     story.append(Spacer(1, 12))
