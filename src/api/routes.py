@@ -1332,17 +1332,40 @@ async def generate_report(request: ReportGenerateRequest):
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid scan_id format")
     
-    if scan_id not in _scans_db:
-        raise HTTPException(status_code=404, detail="Scan not found")
+    scan_name = None
     
-    scan = _scans_db[scan_id]
+    # Check database first if enabled
+    if USE_DATABASE:
+        session = await get_db_session()
+        if session:
+            try:
+                result = await session.execute(
+                    select(ScanModel).where(ScanModel.id == str(scan_id))
+                )
+                db_scan = result.scalar_one_or_none()
+                if db_scan:
+                    scan_name = db_scan.name
+                else:
+                    raise HTTPException(status_code=404, detail="Scan not found")
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"Failed to fetch scan from database: {e}")
+            finally:
+                await session.close()
+    
+    # Fallback to in-memory storage if not found in database
+    if scan_name is None:
+        if scan_id not in _scans_db:
+            raise HTTPException(status_code=404, detail="Scan not found")
+        scan_name = _scans_db[scan_id].name
     
     # Create report
     report_id = uuid4()
     report = {
         "id": report_id,
         "scan_id": scan_id,
-        "name": request.name or f"Report for {scan.name}",
+        "name": request.name or f"Report for {scan_name}",
         "format": request.format,
         "size": f"{random.randint(50, 500)} KB",
         "created_at": datetime.utcnow().isoformat(),
