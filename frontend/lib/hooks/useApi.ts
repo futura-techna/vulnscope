@@ -5,6 +5,7 @@
 
 'use client'
 
+import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api, { 
   Target, TargetCreate, 
@@ -93,13 +94,61 @@ export function useScans(params?: { target_id?: string; status?: string }) {
     queryFn: () => api.getScans(params),
     staleTime: 10000, // 10 seconds - more frequent updates for scans
     refetchInterval: 5000, // Auto-refetch every 5 seconds for active scans
+    refetchIntervalInBackground: true, // Continue refetching when tab is in background
+  })
+}
+
+// Hook for scans with automatic cache invalidation when scans complete
+export function useScansWithInvalidation(params?: { target_id?: string; status?: string }) {
+  const queryClient = useQueryClient()
+  
+  return useQuery({
+    queryKey: [...queryKeys.scans, params],
+    queryFn: async () => {
+      const scans = await api.getScans(params)
+      
+      // Check if any scan recently completed - if so, invalidate related caches
+      const hasCompletedScans = scans.some(s => s.status === 'completed')
+      if (hasCompletedScans) {
+        // Invalidate findings and compliance to get fresh data
+        queryClient.invalidateQueries({ queryKey: queryKeys.findings })
+        queryClient.invalidateQueries({ queryKey: queryKeys.compliance })
+        queryClient.invalidateQueries({ queryKey: ['compliance-categories'] })
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
+      }
+      
+      return scans
+    },
+    staleTime: 10000,
+    refetchInterval: 5000,
+    refetchIntervalInBackground: true,
   })
 }
 
 export function useScan(id: string) {
+  const queryClient = useQueryClient()
+  const prevStatusRef = React.useRef<string | null>(null)
+  
   return useQuery({
     queryKey: queryKeys.scan(id),
-    queryFn: () => api.getScan(id),
+    queryFn: async () => {
+      const scan = await api.getScan(id)
+      
+      // Detect status change from running/pending to completed
+      if (prevStatusRef.current && 
+          (prevStatusRef.current === 'running' || prevStatusRef.current === 'pending') &&
+          scan.status === 'completed') {
+        // Scan just completed - invalidate all related caches
+        queryClient.invalidateQueries({ queryKey: queryKeys.findings })
+        queryClient.invalidateQueries({ queryKey: queryKeys.compliance })
+        queryClient.invalidateQueries({ queryKey: ['compliance-categories'] })
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
+        queryClient.invalidateQueries({ queryKey: queryKeys.scans })
+      }
+      
+      prevStatusRef.current = scan.status
+      return scan
+    },
     enabled: !!id,
     refetchInterval: (query) => {
       // Refetch more frequently for running scans
@@ -118,7 +167,9 @@ export function useCreateScan() {
   return useMutation({
     mutationFn: (data: ScanCreate) => api.createScan(data),
     onSuccess: () => {
+      // Invalidate all related queries when a scan is created
       queryClient.invalidateQueries({ queryKey: queryKeys.scans })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
     },
   })
 }
@@ -149,7 +200,8 @@ export function useFindings(params?: {
   return useQuery({
     queryKey: [...queryKeys.findings, params],
     queryFn: () => api.getFindings(params),
-    staleTime: 30000,
+    staleTime: 10000, // 10 seconds - more frequent updates
+    refetchInterval: 30000, // Auto-refresh every 30 seconds
   })
 }
 
@@ -168,8 +220,13 @@ export function useUpdateFinding() {
     mutationFn: ({ id, data }: { id: string; data: { status?: string; false_positive?: boolean } }) =>
       api.updateFinding(id, data),
     onSuccess: (_, variables) => {
+      // Invalidate findings cache
       queryClient.invalidateQueries({ queryKey: queryKeys.findings })
       queryClient.invalidateQueries({ queryKey: queryKeys.finding(variables.id) })
+      // Also invalidate compliance and dashboard as they depend on findings counts
+      queryClient.invalidateQueries({ queryKey: queryKeys.compliance })
+      queryClient.invalidateQueries({ queryKey: ['compliance-categories'] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
     },
   })
 }
@@ -217,7 +274,20 @@ export function useCompliance() {
       const standards = await api.getComplianceStandards()
       return standards
     },
-    staleTime: 300000, // 5 minutes
+    staleTime: 30000, // 30 seconds - more frequent updates
+    refetchInterval: 60000, // Auto-refresh every minute
+  })
+}
+
+export function useComplianceCategories() {
+  return useQuery({
+    queryKey: ['compliance-categories'],
+    queryFn: async () => {
+      const response = await api.client.get('/compliance/categories')
+      return response.data.categories || []
+    },
+    staleTime: 30000,
+    refetchInterval: 60000,
   })
 }
 

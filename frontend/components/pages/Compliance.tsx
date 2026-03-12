@@ -1,18 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
 import { FileCheck, CheckCircle, AlertTriangle, Loader2, RefreshCw } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { cn } from '@/lib/utils'
-import api from '@/lib/api'
-
-interface ComplianceStandard {
-  name: string
-  score: number
-  status: 'pass' | 'warning' | 'fail'
-  requirements_met: number
-  requirements_total: number
-}
+import { useCompliance, useComplianceCategories, useFindings } from '@/lib/hooks/useApi'
 
 interface ComplianceCategory {
   name: string
@@ -20,32 +11,18 @@ interface ComplianceCategory {
 }
 
 export function Compliance() {
-  const [standards, setStandards] = useState<ComplianceStandard[]>([])
-  const [categories, setCategories] = useState<ComplianceCategory[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  // Use React Query hooks for automatic refetching and cache invalidation
+  const { data: standards, isLoading: standardsLoading, error: standardsError, refetch: refetchStandards } = useCompliance()
+  const { data: findingsData, isLoading: findingsLoading } = useFindings({ limit: 100 })
+  const { data: categories, isLoading: categoriesLoading, refetch: refetchCategories } = useComplianceCategories()
 
-  const fetchCompliance = async () => {
-    setIsLoading(true)
-    setError(null)
-    try {
-      const [standardsRes, categoriesRes] = await Promise.all([
-        api.client.get('/compliance/standards'),
-        api.client.get('/compliance/categories')
-      ])
-      setStandards(standardsRes.data.standards || [])
-      setCategories(categoriesRes.data.categories || [])
-    } catch (err) {
-      console.error('Failed to fetch compliance data:', err)
-      setError('Failed to load compliance data')
-    } finally {
-      setIsLoading(false)
-    }
+  const isLoading = standardsLoading || findingsLoading || categoriesLoading
+  const error = standardsError ? 'Failed to load compliance data' : null
+
+  const handleRefresh = () => {
+    refetchStandards()
+    refetchCategories()
   }
-
-  useEffect(() => {
-    fetchCompliance()
-  }, [])
 
   const getScoreColor = (score: number) => {
     if (score >= 90) return '#22c55e' // green
@@ -76,7 +53,7 @@ export function Compliance() {
           <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-destructive" />
           <p className="text-destructive">{error}</p>
           <button
-            onClick={fetchCompliance}
+            onClick={handleRefresh}
             className="mt-4 px-4 py-2 border rounded-lg hover:bg-muted"
           >
             Retry
@@ -95,7 +72,7 @@ export function Compliance() {
           <p className="text-muted-foreground mt-1">Monitor compliance with security standards</p>
         </div>
         <button
-          onClick={fetchCompliance}
+          onClick={handleRefresh}
           className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-muted"
         >
           <RefreshCw className="h-4 w-4" />

@@ -702,48 +702,58 @@ async def check_compliance(request: ComplianceRequest):
 @router.get("/compliance/standards", tags=["compliance"])
 async def list_compliance_standards():
     """List supported compliance standards with scores"""
-    # Calculate scores based on findings
+    # Calculate scores based on actual findings
     total_findings = len(_findings_db)
     critical = sum(1 for f in _findings_db.values() if f.severity == "Critical")
     high = sum(1 for f in _findings_db.values() if f.severity == "High")
+    medium = sum(1 for f in _findings_db.values() if f.severity == "Medium")
+    low = sum(1 for f in _findings_db.values() if f.severity == "Low")
     
-    # Base score on findings
-    base_score = max(60, 100 - (critical * 10) - (high * 3))
+    # Base score on findings - deterministic calculation
+    # Critical findings have the most impact, then High, Medium, Low
+    base_score = max(0, 100 - (critical * 15) - (high * 8) - (medium * 3) - (low * 1))
+    
+    # Calculate requirements met based on findings severity
+    # Each standard has different tolerance for vulnerabilities
+    def calculate_requirements(met_base: int, total: int, critical_count: int, high_count: int) -> int:
+        """Calculate requirements met based on vulnerability counts"""
+        failed = min(met_base // 5, critical_count * 3 + high_count)
+        return max(0, met_base - failed)
     
     standards = [
         {
             "name": "PCI-DSS",
-            "score": min(100, base_score + random.randint(-5, 5)),
-            "status": "pass" if base_score >= 90 else "warning",
-            "requirements_met": random.randint(15, 20),
+            "score": min(100, max(0, base_score - critical * 5)),
+            "status": "pass" if (base_score - critical * 5) >= 90 else "warning" if (base_score - critical * 5) >= 70 else "fail",
+            "requirements_met": calculate_requirements(20, 20, critical, high),
             "requirements_total": 20,
         },
         {
             "name": "NIS2",
-            "score": min(100, base_score + random.randint(-10, 3)),
-            "status": "pass" if base_score >= 85 else "warning",
-            "requirements_met": random.randint(20, 32),
+            "score": min(100, max(0, base_score - critical * 3 - high * 2)),
+            "status": "pass" if (base_score - critical * 3 - high * 2) >= 85 else "warning" if (base_score - critical * 3 - high * 2) >= 65 else "fail",
+            "requirements_met": calculate_requirements(32, 32, critical, high),
             "requirements_total": 32,
         },
         {
             "name": "SOC2",
-            "score": min(100, base_score + random.randint(-3, 7)),
-            "status": "pass" if base_score >= 90 else "warning",
-            "requirements_met": random.randint(40, 50),
+            "score": min(100, max(0, base_score - critical * 4)),
+            "status": "pass" if (base_score - critical * 4) >= 90 else "warning" if (base_score - critical * 4) >= 70 else "fail",
+            "requirements_met": calculate_requirements(50, 50, critical, high),
             "requirements_total": 50,
         },
         {
             "name": "HIPAA",
-            "score": min(100, base_score + random.randint(-8, 5)),
-            "status": "pass" if base_score >= 88 else "warning",
-            "requirements_met": random.randint(35, 50),
+            "score": min(100, max(0, base_score - critical * 6 - high * 2)),
+            "status": "pass" if (base_score - critical * 6 - high * 2) >= 88 else "warning" if (base_score - critical * 6 - high * 2) >= 68 else "fail",
+            "requirements_met": calculate_requirements(50, 50, critical, high),
             "requirements_total": 50,
         },
         {
             "name": "ISO27001",
-            "score": min(100, base_score + random.randint(-5, 8)),
-            "status": "pass" if base_score >= 85 else "warning",
-            "requirements_met": random.randint(60, 80),
+            "score": min(100, max(0, base_score - critical * 2 - high)),
+            "status": "pass" if (base_score - critical * 2 - high) >= 85 else "warning" if (base_score - critical * 2 - high) >= 65 else "fail",
+            "requirements_met": calculate_requirements(80, 80, critical, high),
             "requirements_total": 80,
         },
     ]
@@ -753,14 +763,47 @@ async def list_compliance_standards():
 
 @router.get("/compliance/categories", tags=["compliance"])
 async def get_compliance_categories():
-    """Get compliance scores by category"""
+    """Get compliance scores by category based on actual findings"""
+    # Count findings by vulnerability type to determine category scores
+    total_findings = len(_findings_db)
+    critical = sum(1 for f in _findings_db.values() if f.severity == "Critical")
+    high = sum(1 for f in _findings_db.values() if f.severity == "High")
+    medium = sum(1 for f in _findings_db.values() if f.severity == "Medium")
+    low = sum(1 for f in _findings_db.values() if f.severity == "Low")
+    
+    # Map vulnerability types to categories
+    vuln_types = [f.vuln_type for f in _findings_db.values()]
+    
+    # Calculate category scores based on relevant findings
+    def calc_category_score(base: int, relevant_critical: int, relevant_high: int) -> int:
+        return max(0, min(100, base - relevant_critical * 20 - relevant_high * 10))
+    
+    # Access Control - affected by IDOR, CSRF, auth issues
+    auth_vulns = sum(1 for f in _findings_db.values() if f.vuln_type in ["IDOR", "CSRF", "Broken Authentication"])
+    access_score = calc_category_score(95, auth_vulns // 2, auth_vulns)
+    
+    # Encryption - affected by data exposure issues
+    crypto_vulns = sum(1 for f in _findings_db.values() if "crypto" in f.vuln_type.lower() or "exposure" in f.vuln_type.lower())
+    encryption_score = calc_category_score(98, crypto_vulns, crypto_vulns // 2)
+    
+    # Monitoring - affected by injection issues
+    injection_vulns = sum(1 for f in _findings_db.values() if "injection" in f.vuln_type.lower() or "xss" in f.vuln_type.lower())
+    monitoring_score = calc_category_score(92, injection_vulns // 2, injection_vulns)
+    
+    # Incident Response - general security posture
+    incident_score = calc_category_score(90, critical // 3, high // 2)
+    
+    # Vendor Management - SSRF and external service issues
+    ssrf_vulns = sum(1 for f in _findings_db.values() if "ssrf" in f.vuln_type.lower())
+    vendor_score = calc_category_score(94, ssrf_vulns, ssrf_vulns // 2)
+    
     return {
         "categories": [
-            {"name": "Access Control", "score": random.randint(75, 98)},
-            {"name": "Encryption", "score": random.randint(80, 95)},
-            {"name": "Monitoring", "score": random.randint(85, 99)},
-            {"name": "Incident Response", "score": random.randint(70, 90)},
-            {"name": "Vendor Management", "score": random.randint(75, 92)},
+            {"name": "Access Control", "score": access_score},
+            {"name": "Encryption", "score": encryption_score},
+            {"name": "Monitoring", "score": monitoring_score},
+            {"name": "Incident Response", "score": incident_score},
+            {"name": "Vendor Management", "score": vendor_score},
         ]
     }
 
