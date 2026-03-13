@@ -1,16 +1,28 @@
 'use client'
 
 import { useState } from 'react'
-import { FileText, Download, FileJson, FileCode, File, Loader2, RefreshCw, CheckCircle } from 'lucide-react'
+import { FileText, Download, FileJson, FileCode, File, Loader2, RefreshCw, CheckCircle, ExternalLink } from 'lucide-react'
 import { cn, formatDate } from '@/lib/utils'
 import { useReports, useGenerateReport, useScans } from '@/lib/hooks/useApi'
 import api from '@/lib/api'
 
+// Sample report for demo/download when backend is not available
+const SAMPLE_REPORT = {
+  id: 'demo-report-001',
+  name: 'Security Scan Report - maths-plus-plus.vercel.app',
+  format: 'html',
+  size: '12.9 KB',
+  created_at: new Date().toISOString(),
+  scan_id: 'demo-scan',
+  download_url: '/vulnscope_report.html'
+}
+
 export function Reports() {
   const [selectedScan, setSelectedScan] = useState('')
-  const [selectedFormat, setSelectedFormat] = useState('json')
+  const [selectedFormat, setSelectedFormat] = useState('html')
   const [reportName, setReportName] = useState('')
   const [generatedReport, setGeneratedReport] = useState<any>(null)
+  const [isDownloading, setIsDownloading] = useState(false)
 
   // Fetch data using React Query hooks
   const { data: reports, isLoading: reportsLoading, refetch: refetchReports } = useReports()
@@ -218,6 +230,76 @@ export function Reports() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Quick Download Section - Demo Report */}
+      <div className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-xl p-6 border border-blue-500/20">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <Download className="h-5 w-5 text-blue-500" />
+              Rapport de démonstration disponible
+            </h2>
+            <p className="text-muted-foreground mt-1">
+              Téléchargez le rapport de scan de sécurité généré pour maths-plus-plus.vercel.app
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <a
+              href={SAMPLE_REPORT.download_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 px-4 py-2 border border-blue-500 text-blue-500 rounded-lg hover:bg-blue-500/10"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Voir
+            </a>
+            <button
+              onClick={() => {
+                setIsDownloading(true)
+                const link = document.createElement('a')
+                link.href = SAMPLE_REPORT.download_url
+                link.download = 'vulnscope_report.html'
+                document.body.appendChild(link)
+                link.click()
+                document.body.removeChild(link)
+                setTimeout(() => setIsDownloading(false), 1000)
+              }}
+              disabled={isDownloading}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
+            >
+              {isDownloading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Téléchargement...
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4" />
+                  Télécharger
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div>
+            <span className="text-muted-foreground">Cible:</span>
+            <p className="font-medium">maths-plus-plus.vercel.app</p>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Format:</span>
+            <p className="font-medium">HTML</p>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Taille:</span>
+            <p className="font-medium">12.9 KB</p>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Vulnérabilités:</span>
+            <p className="font-medium">4 (2 Medium, 1 Low, 1 Info)</p>
+          </div>
+        </div>
       </div>
 
       {/* Report History */}
