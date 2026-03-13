@@ -60,6 +60,7 @@ from ..fuzzer.fuzzer import Fuzzer
 from ..evidence.vault import EvidenceVault
 from ..evidence.policy import PolicyEngine
 from ..evidence.exporters import ExporterFactory
+from ..evidence.report_storage import get_report_storage
 from fastapi.responses import Response
 from ..evidence.compliance import ComplianceReport
 from ..config.settings import get_settings
@@ -1310,23 +1311,43 @@ async def discover_graphql(endpoint_url: str = Query(...), target_id: UUID = Que
 
 @router.get("/reports", tags=["reports"])
 async def list_reports():
-    """List all reports"""
-    return [
-        {
-            "id": str(r["id"]),
-            "scan_id": str(r["scan_id"]),
+    """List all reports from persistent storage"""
+    storage = get_report_storage()
+    reports = storage.list_reports()
+    
+    # Combine with in-memory storage for backward compatibility
+    all_reports = []
+    
+    # Add reports from persistent storage
+    for r in reports:
+        all_reports.append({
+            "id": r["id"],
+            "scan_id": r["scan_id"],
             "name": r["name"],
             "format": r["format"],
             "size": r.get("size", "Unknown"),
             "created_at": r["created_at"],
-        }
-        for r in _reports_db.values()
-    ]
+        })
+    
+    # Add reports from memory that aren't already in storage
+    storage_ids = {r["id"] for r in reports}
+    for r in _reports_db.values():
+        if str(r["id"]) not in storage_ids:
+            all_reports.append({
+                "id": str(r["id"]),
+                "scan_id": str(r["scan_id"]),
+                "name": r["name"],
+                "format": r["format"],
+                "size": r.get("size", "Unknown"),
+                "created_at": r["created_at"],
+            })
+    
+    return all_reports
 
 
 @router.post("/reports/generate", response_model=ReportResponse, tags=["reports"])
 async def generate_report(request: ReportGenerateRequest):
-    """Generate a report"""
+    """Generate a report and save it to disk"""
     # Verify scan exists
     try:
         scan_id = UUID(request.scan_id)
@@ -1334,6 +1355,9 @@ async def generate_report(request: ReportGenerateRequest):
         raise HTTPException(status_code=400, detail="Invalid scan_id format")
     
     scan_name = None
+    scan = None
+    target = None
+    findings = []
     
     # Check database first if enabled
     if USE_DATABASE:
@@ -1346,6 +1370,44 @@ async def generate_report(request: ReportGenerateRequest):
                 db_scan = result.scalar_one_or_none()
                 if db_scan:
                     scan_name = db_scan.name
+                    scan = Scan(
+                        id=UUID(db_scan.id),
+                        target_id=UUID(db_scan.target_id),
+                        name=db_scan.name,
+                        scan_type=db_scan.scan_type or "full",
+                    )
+                    
+                    # Get target
+                    target_result = await session.execute(
+                        select(TargetModel).where(TargetModel.id == db_scan.target_id)
+                    )
+                    db_target = target_result.scalar_one_or_none()
+                    if db_target:
+                        target = Target(
+                            id=UUID(db_target.id),
+                            name=db_target.name,
+                            url=db_target.url,
+                        )
+                    
+                    # Get findings
+                    findings_result = await session.execute(
+                        select(FindingModel).where(FindingModel.scan_id == str(scan_id))
+                    )
+                    db_findings = findings_result.scalars().all()
+                    for f in db_findings:
+                        finding = Finding(
+                            id=UUID(f.id),
+                            scan_id=UUID(f.scan_id),
+                            target_id=UUID(f.target_id),
+                            title=f.title,
+                            description=f.description or "",
+                            severity=f.severity,
+                            vuln_type=f.vuln_type,
+                            url=f.url,
+                            method=f.method,
+                            status=f.status,
+                        )
+                        findings.append(finding)
                 else:
                     raise HTTPException(status_code=404, detail="Scan not found")
             except HTTPException:
@@ -1359,27 +1421,62 @@ async def generate_report(request: ReportGenerateRequest):
     if scan_name is None:
         if scan_id not in _scans_db:
             raise HTTPException(status_code=404, detail="Scan not found")
-        scan_name = _scans_db[scan_id].name
+        scan = _scans_db[scan_id]
+        scan_name = scan.name
+        target = _targets_db.get(scan.target_id)
+        findings = [f for f in _findings_db.values() if f.scan_id == scan_id]
     
-    # Create report
+    # Create default target if not found
+    if target is None:
+        target = Target(
+            id=scan.target_id if scan else uuid4(),
+            name="Unknown Target",
+            url="http://unknown",
+        )
+    
+    # Get exporter and generate content
+    report_format = request.format.lower()
+    exporter = ExporterFactory.get_exporter(report_format)
+    if not exporter:
+        raise HTTPException(status_code=400, detail=f"Unsupported format: {report_format}")
+    
+    try:
+        content = exporter.export(findings, scan, target)
+    except Exception as e:
+        logger.error(f"Failed to export report: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate report: {str(e)}")
+    
+    # Create report ID
     report_id = uuid4()
-    report = {
+    report_name = request.name or f"Report for {scan_name}"
+    
+    # Save report to disk using persistent storage
+    storage = get_report_storage()
+    metadata = storage.save_report(
+        report_id=report_id,
+        content=content,
+        format=report_format,
+        scan_id=scan_id,
+        name=report_name
+    )
+    
+    # Also store in memory for backward compatibility
+    _reports_db[report_id] = {
         "id": report_id,
         "scan_id": scan_id,
-        "name": request.name or f"Report for {scan_name}",
-        "format": request.format,
-        "size": f"{random.randint(50, 500)} KB",
-        "created_at": datetime.utcnow().isoformat(),
-        "content": "Report content would be here",
+        "name": report_name,
+        "format": report_format,
+        "size": metadata.get("size", "Unknown"),
+        "created_at": metadata.get("created_at", datetime.utcnow().isoformat()),
     }
     
-    _reports_db[report_id] = report
+    logger.info(f"Report {report_id} generated and saved to {storage.get_storage_path()}")
     
     return ReportResponse(
         id=report_id,
         scan_id=scan_id,
-        format=request.format,
-        content=report["content"],
+        format=report_format,
+        content=content[:500] + "..." if len(content) > 500 else content,
     )
 
 
@@ -1395,6 +1492,44 @@ async def get_report(report_id: UUID):
 @router.get("/reports/{report_id}/download", tags=["reports"])
 async def download_report(report_id: UUID):
     """Download a report as a file"""
+    # First check persistent storage
+    storage = get_report_storage()
+    stored_content = storage.get_report(report_id)
+    
+    if stored_content:
+        # Report found in persistent storage
+        metadata = storage.get_report_metadata(report_id)
+        report_format = metadata.get("format", "json").lower()
+        
+        # Determine content type
+        content_types = {
+            "json": "application/json",
+            "html": "text/html",
+            "csv": "text/csv",
+            "xml": "application/xml",
+            "sarif": "application/json",
+            "pdf": "text/html",  # PDF exporter returns HTML
+        }
+        
+        content_type = content_types.get(report_format, "application/octet-stream")
+        
+        # Generate filename
+        filename = f"vulnscope-report-{report_id}.{report_format}"
+        if report_format == "sarif":
+            filename = f"vulnscope-report-{report_id}.sarif.json"
+        
+        logger.info(f"Report {report_id} served from persistent storage")
+        
+        # Return file response
+        return Response(
+            content=stored_content,
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )
+    
+    # Fall back to in-memory storage
     if report_id not in _reports_db:
         raise HTTPException(status_code=404, detail="Report not found")
     
