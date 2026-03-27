@@ -131,13 +131,18 @@ class XSSDetector(Detector):
     def _is_vulnerable(self, response_text: str, payload: str) -> bool:
         """Check if response indicates XSS vulnerability"""
         # Check if payload is reflected without encoding
-        encoded_payload = payload.replace('<', '<').replace('>', '>')
+        import html
+        encoded_payload = html.escape(payload)
         
-        # If original payload appears in response (not encoded)
+        # If original payload appears in response (not encoded) - potential XSS
         if payload in response_text:
             return True
         
-        # Check for common XSS indicators
+        # If encoded version appears but original does not - likely safe
+        if encoded_payload in response_text and payload not in response_text:
+            return False
+        
+        # Check for common XSS indicators in response
         xss_indicators = [
             '<script',
             'onerror=',
@@ -223,7 +228,7 @@ class SQLInjectionDetector(Detector):
                         }
                     )
                     findings.append(finding)
-                    break
+                    break  # Vulnerability found, stop testing other payloads
                     
             except Exception:
                 continue
@@ -260,10 +265,15 @@ class SQLInjectionDetector(Detector):
         
         # Check for significant differences from baseline
         if baseline and response:
-            # Different content length might indicate injection
-            len_diff = abs(len(response.text) - len(baseline.text))
-            if len_diff > 1000:
-                return True
+            baseline_len = len(baseline.text)
+            response_len = len(response.text)
+            
+            # Use percentage-based comparison for more accurate detection
+            if baseline_len > 0:
+                len_ratio = response_len / baseline_len
+                # If response is significantly different in size (>50% difference)
+                if len_ratio < 0.5 or len_ratio > 2.0:
+                    return True
             
             # Different status code
             if response.status_code != baseline.status_code:
@@ -318,7 +328,7 @@ class SSRDetector(Detector):
                         }
                     )
                     findings.append(finding)
-                    break
+                    break  # Vulnerability found, stop testing other payloads
                     
             except Exception:
                 continue
@@ -409,7 +419,7 @@ class IDORDetector(Detector):
                             }
                         )
                         findings.append(finding)
-                        break
+                        break  # Vulnerability found, stop testing other IDs
                         
                 except Exception:
                     continue
@@ -494,7 +504,7 @@ class AuthBypassDetector(Detector):
                             }
                         )
                         findings.append(finding)
-                        break
+                        break  # Vulnerability found, stop testing other payloads
                         
             except Exception:
                 continue
@@ -628,7 +638,7 @@ class XXEDetector(Detector):
                         }
                     )
                     findings.append(finding)
-                    break
+                    break  # Vulnerability found, stop testing other payloads
                     
             except Exception:
                 continue
@@ -700,7 +710,7 @@ class CommandInjectionDetector(Detector):
                         }
                     )
                     findings.append(finding)
-                    break
+                    break  # Vulnerability found, stop testing other payloads
                     
             except Exception:
                 continue
@@ -761,7 +771,7 @@ class SSTIDetector(Detector):
                         }
                     )
                     findings.append(finding)
-                    break
+                    break  # Vulnerability found, stop testing other engines
                     
             except Exception:
                 continue
@@ -839,7 +849,7 @@ class DeserializationDetector(Detector):
                         }
                     )
                     findings.append(finding)
-                    break
+                    break  # Found serialization indicator, no need to continue
             
             # Check for base64 encoded serialized data
             if endpoint.body:
@@ -920,7 +930,7 @@ class PathTraversalDetector(Detector):
                                 }
                             )
                             findings.append(finding)
-                            break
+                            break  # Vulnerability found, stop testing other payloads
                             
                     except Exception:
                         continue

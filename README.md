@@ -22,7 +22,7 @@ VulnScope est une plateforme complète de sécurité applicative pour la détect
 - **SIEM** : Splunk, ELK, QRadar
 
 ### 🎨 Interface
-- **Dashboard Streamlit** en temps réel
+- **Dashboard Next.js** en temps réel
 - **API REST** complète (FastAPI)
 - **GraphQL** pour les requêtes flexibles
 - **WebSocket** pour les mises à jour live
@@ -55,8 +55,8 @@ pip install -r requirements.txt
 # Démarrer l'API
 uvicorn src.api.main:app --reload
 
-# Dans un autre terminal, démarrer le dashboard
-streamlit run dashboard/app.py
+# Dans un autre terminal, démarrer le frontend Next.js
+npm run dev --prefix frontend
 ```
 
 ## Architecture
