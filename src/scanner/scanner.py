@@ -24,6 +24,32 @@ from .detectors import (
     SSTIDetector, DeserializationDetector,
     PathTraversalDetector, Detector
 )
+from .cloud_detectors import (
+    CloudSecurityDetector, IAMDetector,
+    CryptographicHygieneDetector, ZeroTrustDetector,
+    NetworkSecurityDetector
+)
+from .supply_chain_detectors import (
+    SupplyChainDetector, SupplyChainIntegrityDetector,
+    DependencyConfusionDetector
+)
+from .zero_trust_detectors import (
+    ContextAwareAccessDetector, DevicePostureDetector,
+    MicroSegmentationDetector, AnomalyDetectionDetector,
+    EncryptionVerificationDetector, VisibilitySensitivityDetector
+)
+from .network_security_detectors import (
+    PortScannerDetector, ServiceDiscoveryDetector,
+    NetworkSegmentationDetector, FirewallDetectionDetector
+)
+from .cloud_advanced_detectors import (
+    AWSMisconfigurationDetector, AzureMisconfigurationDetector,
+    GCPMisconfigurationDetector
+)
+from .nist_zero_trust_mapping import zero_trust_service
+from .anomaly_detection import (
+    BehavioralAnalyzer, RiskScorer, ContinuousThreatAssessment
+)
 
 
 @dataclass
@@ -58,6 +84,7 @@ class VulnerabilityFinder:
         """Initialize vulnerability detectors"""
         # Add all detectors
         self.detectors = [
+            # Original AppSec detectors
             XSSDetector(),
             SQLInjectionDetector(),
             SSRDetector(),
@@ -68,6 +95,36 @@ class VulnerabilityFinder:
             SSTIDetector(),
             DeserializationDetector(),
             PathTraversalDetector(),
+            
+            # Cloud & IAM Security
+            CloudSecurityDetector(),
+            IAMDetector(),
+            AWSMisconfigurationDetector(),
+            AzureMisconfigurationDetector(),
+            GCPMisconfigurationDetector(),
+            
+            # Cryptographic Hygiene
+            CryptographicHygieneDetector(),
+            EncryptionVerificationDetector(),
+            
+            # Zero Trust Architecture (NIST SP 800-207)
+            ContextAwareAccessDetector(),
+            DevicePostureDetector(),
+            MicroSegmentationDetector(),
+            AnomalyDetectionDetector(),
+            VisibilitySensitivityDetector(),
+            
+            # Network Security
+            PortScannerDetector(),
+            ServiceDiscoveryDetector(),
+            NetworkSegmentationDetector(),
+            FirewallDetectionDetector(),
+            NetworkSecurityDetector(),
+            
+            # Supply Chain Security (SCA)
+            SupplyChainDetector(),
+            SupplyChainIntegrityDetector(),
+            DependencyConfusionDetector(),
         ]
     
     def find_vulnerabilities(self, endpoint: Endpoint, 
@@ -361,6 +418,23 @@ class Scanner:
             VulnerabilityType.SSRF: "CWE-918",
             VulnerabilityType.IDOR: "CWE-639",
             VulnerabilityType.AUTH_BYPASS: "CWE-287",
+            # Cloud Security
+            VulnerabilityType.CLOUD_MISCONFIGURATION: "CWE-16",
+            VulnerabilityType.INSECURE_STORAGE: "CWE-377",
+            VulnerabilityType.OVERLY_PERMISSIVE_IAM: "CWE-266",
+            # Cryptographic Hygiene
+            VulnerabilityType.WEAK_CRYPTOGRAPHY: "CWE-327",
+            VulnerabilityType.WEAK_SSL_TLS: "CWE-295",
+            VulnerabilityType.INSECURE_CIPHER: "CWE-327",
+            # Software Supply Chain
+            VulnerabilityType.VULNERABLE_DEPENDENCY: "CWE-1104",
+            VulnerabilityType.SUPPLY_CHAIN_COMPROMISE: "CWE-1357",
+            # Zero Trust
+            VulnerabilityType.MISSING_ZERO_TRUST: "CWE-284",
+            # Network Security
+            VulnerabilityType.INSECURE_NETWORK_CONFIG: "CWE-318",
+            VulnerabilityType.OPEN_PORT: "CWE-1333",
+            VulnerabilityType.INSECURE_PROTOCOL: "CWE-319",
         }
         
         return Finding(

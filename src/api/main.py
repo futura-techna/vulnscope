@@ -3,7 +3,7 @@ VulnScope - FastAPI Application
 Main application file for VulnScope REST API
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -12,6 +12,7 @@ import logging
 
 from .routes import router
 from .auth_routes import router as auth_router
+from .websocket import ws_manager
 from ..config.settings import get_settings
 
 
@@ -112,6 +113,32 @@ async def health_check():
         "service": "vulnscope-api",
         "version": "1.0.0"
     }
+
+
+# WebSocket endpoint for real-time scan updates
+@app.websocket("/ws/scans/{scan_id}")
+async def websocket_endpoint(websocket: WebSocket, scan_id: str):
+    """
+    WebSocket endpoint for real-time scan updates
+    
+    Provides real-time notifications for:
+    - Scan progress
+    - New findings
+    - Endpoints discovered
+    - Scan completion
+    """
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive, receive any client messages if needed
+            data = await websocket.receive_text()
+            # You could handle ping/pong or client commands here
+            # For now, just acknowledge receipt
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+    except Exception as e:
+        logger.error(f"WebSocket error for scan {scan_id}: {e}")
+        ws_manager.disconnect(websocket)
 
 
 # Root endpoint

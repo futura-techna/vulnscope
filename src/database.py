@@ -6,10 +6,10 @@ SQLAlchemy database configuration and session management
 import os
 from datetime import datetime
 from typing import AsyncGenerator, Optional
-from sqlalchemy import create_engine, Column, String, DateTime, Integer, Text, Boolean, ForeignKey, Enum as SQLEnum
+from sqlalchemy import create_engine, Column, String, DateTime, Integer, Text, Boolean, ForeignKey, Enum as SQLEnum, JSON
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, relationship
-from sqlalchemy.types import TypeDecorator, JSON
+from sqlalchemy.types import TypeDecorator
 from uuid import uuid4
 import enum
 
@@ -159,7 +159,7 @@ class FindingModel(Base):
     method = Column(String(10), nullable=True)
     parameter = Column(String(255), nullable=True)
     payload = Column(Text, nullable=True)
-    evidence = Column(Text, nullable=True)
+    evidence = Column(JSON, nullable=True)
     
     # Classification
     cwe_id = Column(String(20), nullable=True)

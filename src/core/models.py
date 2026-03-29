@@ -21,11 +21,11 @@ class Severity(str, Enum):
 
 class Status(str, Enum):
     """Scan and finding status"""
-    PENDING = "PENDING"
-    RUNNING = "RUNNING"
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
-    CANCELLED = "CANCELLED"
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class VulnerabilityType(str, Enum):
@@ -48,6 +48,23 @@ class VulnerabilityType(str, Enum):
     RATE_LIMITING = "RATE_LIMITING"
     CORS = "CORS"
     INFO_LEAK = "INFO_LEAK"
+    # Cloud Security
+    CLOUD_MISCONFIGURATION = "CLOUD_MISCONFIGURATION"
+    INSECURE_STORAGE = "INSECURE_STORAGE"
+    OVERLY_PERMISSIVE_IAM = "OVERLY_PERMISSIVE_IAM"
+    # Cryptographic Hygiene
+    WEAK_CRYPTOGRAPHY = "WEAK_CRYPTOGRAPHY"
+    WEAK_SSL_TLS = "WEAK_SSL_TLS"
+    INSECURE_CIPHER = "INSECURE_CIPHER"
+    # Software Supply Chain
+    VULNERABLE_DEPENDENCY = "VULNERABLE_DEPENDENCY"
+    SUPPLY_CHAIN_COMPROMISE = "SUPPLY_CHAIN_COMPROMISE"
+    # Zero Trust
+    MISSING_ZERO_TRUST = "MISSING_ZERO_TRUST"
+    # Network Security
+    INSECURE_NETWORK_CONFIG = "INSECURE_NETWORK_CONFIG"
+    OPEN_PORT = "OPEN_PORT"
+    INSECURE_PROTOCOL = "INSECURE_PROTOCOL"
 
 
 class Target(BaseModel):

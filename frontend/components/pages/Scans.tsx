@@ -81,7 +81,7 @@ export function Scans() {
   }
 
   const getStatusIcon = (status: string) => {
-    switch (status) {
+    switch (status?.toLowerCase()) {
       case 'completed':
         return <CheckCircle className="h-4 w-4 text-green-500" />
       case 'running':

@@ -66,7 +66,7 @@ export interface Finding {
   method?: string
   parameter?: string
   payload?: string
-  evidence?: string
+  evidence?: Record<string, any>
   status: 'Open' | 'In Progress' | 'Resolved' | 'False Positive'
   cvss_score?: number
   cwe_id?: string
@@ -311,11 +311,33 @@ class APIClient {
   // Compliance
   async getComplianceStandards(): Promise<ComplianceStandard[]> {
     const response = await this.client.get('/compliance/standards')
-    return response.data.standards
+    return response.data
   }
 
   async checkCompliance(standard: string): Promise<ComplianceResponse> {
     const response = await this.client.post('/compliance/check', { standard })
+    return response.data
+  }
+
+  // Email Verification
+  async verifyEmail(token: string): Promise<{ verified: boolean; message: string }> {
+    const response = await this.client.post('/auth/verify-email', { token })
+    return response.data
+  }
+
+  async resendVerificationEmail(email: string): Promise<{ sent: boolean; message: string }> {
+    const response = await this.client.post('/auth/resend-verification', { email })
+    return response.data
+  }
+
+  // Password Reset
+  async requestPasswordReset(email: string): Promise<{ sent: boolean; message: string }> {
+    const response = await this.client.post('/auth/forgot-password', { email })
+    return response.data
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+    const response = await this.client.post('/auth/reset-password', { token, new_password: newPassword })
     return response.data
   }
 
